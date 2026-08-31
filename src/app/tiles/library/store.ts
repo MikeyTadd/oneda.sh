@@ -197,6 +197,22 @@ export async function fileMeta(file: LibraryFile, contentKey?: CryptoKey): Promi
   return { title: "Untitled", description: "", keywords: [] };
 }
 
+/** Rewrites a file's own title/description/keywords after the fact — the upload form and
+ * the "Edit" action on an already-uploaded file share this rather than each having their own
+ * write path. Never touches the file's bytes/chunks. */
+export async function updateFileMeta(ctx: TileContext, file: LibraryFile, meta: LibraryFileMeta, contentKey?: CryptoKey): Promise<LibraryFile> {
+  const now = Date.now();
+  let updated: LibraryFile;
+  if (contentKey) {
+    const { ciphertext, iv } = await encryptRecord(contentKey, meta);
+    updated = { ...file, updatedAt: now, encryptedMeta: joinIvAndCiphertext(iv, ciphertext) };
+  } else {
+    updated = { ...file, meta, updatedAt: now };
+  }
+  await ctx.storage.put(namespacedKey(ctx.dataNamespace, fileKey(file.id)), updated);
+  return updated;
+}
+
 /** Reassembles every chunk into one Blob, in order — see this module's header comment on why
  * that's an acceptable v1 trade-off (no byte-range streaming through decryption yet) rather
  * than a design flaw to route around. */

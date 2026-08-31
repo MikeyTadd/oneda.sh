@@ -12,12 +12,14 @@ import type { Tile, TileContext } from "../types.js";
 import {
   createHiddenLibrary,
   createLibrary,
+  deleteFile,
   deleteLibrary,
   downloadFile,
   fileMeta,
   loadAll,
   renameLibrary,
   tryReveal,
+  updateFileMeta,
   uploadFile,
   type LibraryState,
 } from "./store.js";
@@ -33,6 +35,20 @@ const revealed = new Map<string, { contentKey: CryptoKey; name: string }>();
 
 let currentLibraryId: string | null = null;
 let searchQuery = "";
+
+type FileCategory = "image" | "video" | "audio" | "document";
+const CATEGORY_LABELS: Record<FileCategory, string> = { image: "Images", video: "Videos", audio: "Audio", document: "Documents" };
+function categoryOf(mimeType: string): FileCategory {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "document";
+}
+let activeCategory: FileCategory | null = null;
+/** Shown by default; a chip toggles it off rather than it needing to be discovered — this is
+ * a convenience filter, not the hidden-library gesture, so there's no reason to hide it by
+ * default the way that one is. */
+let filtersVisible = true;
 
 let shellEl: HTMLElement | null = null;
 let sidebarEl: HTMLElement | null = null;
@@ -115,6 +131,31 @@ function visibleLibraries(): LibraryMeta[] {
   return state.libraries.filter((l) => !l.hidden || revealed.has(l.id)).sort((a, b) => displayName(a).localeCompare(displayName(b)));
 }
 
+/** A labeled field inside a sheet form (shell.css's `.form-field`) — the New library, Upload
+ * and Edit file sheets below are the app's first multi-field forms, so a bare `.text-input`
+ * (fine for the single-field passphrase prompt) needs a label to tell fields apart. */
+function formField(label: string, control: HTMLElement): HTMLElement {
+  return el("label.form-field", {}, [el("span.form-field-label", { text: label }), control]);
+}
+
+/** The same switch shell.css already styles for Settings (button carrying its state in
+ * aria-pressed) — settings.ts's own copy is module-private, so this is a second, small one
+ * rather than exporting across a tile boundary for one control. */
+function switchControl(on: boolean, label: string, onChange: (next: boolean) => void): HTMLButtonElement {
+  const btn = el<HTMLButtonElement>("button.switch", {
+    type: "button",
+    "aria-pressed": String(on),
+    "aria-label": label,
+    onClick: () => {
+      const next = btn.getAttribute("aria-pressed") !== "true";
+      btn.setAttribute("aria-pressed", String(next));
+      onChange(next);
+    },
+  });
+  btn.appendChild(el("i"));
+  return btn;
+}
+
 // ── sidebar: the library list ────────────────────────────────────────────
 
 function paintSidebar(): void {
@@ -126,7 +167,7 @@ function paintSidebar(): void {
   const newLibraryBtn = el<HTMLButtonElement>("button.btn.ghost.wide", {
     type: "button",
     text: "New library",
-    onClick: () => void promptNewLibrary(),
+    onClick: () => openNewLibrarySheet(),
   });
 
   const list = el("div.notes-list");
@@ -144,7 +185,7 @@ function libraryRow(library: LibraryMeta): HTMLElement {
   const openBtn = el("button.notes-row-main", { type: "button", onClick: () => selectLibrary(library.id) });
   appendChildren(openBtn, el("div.name", { text: displayName(library) }));
 
-  const renameBtn = el("button.chip.act", { type: "button", text: "Rename", onClick: () => void promptRenameLibrary(library) });
+  const renameBtn = el("button.chip.act", { type: "button", text: "Rename", onClick: () => openRenameLibrarySheet(library) });
   const deleteBtn = el("button.chip.act", { type: "button", text: "Delete", onClick: () => void removeLibrary(library) });
 
   return el("div.row", { "data-current": library.id === currentLibraryId ? "true" : undefined }, [
@@ -157,6 +198,7 @@ function libraryRow(library: LibraryMeta): HTMLElement {
 function selectLibrary(id: string): void {
   currentLibraryId = id;
   searchQuery = "";
+  activeCategory = null;
   shellEl?.setAttribute("data-view", "files");
   paintSidebar();
   paintMain();
@@ -168,42 +210,103 @@ function backToList(): void {
   paintMain();
 }
 
-async function promptNewLibrary(): Promise<void> {
-  const name = prompt("Library name")?.trim();
-  if (!name) return;
-  const hidden = confirm(`Hide "${name}" behind its own passphrase?\n\nOK = hidden, Cancel = a normal library.`);
+function openNewLibrarySheet(): void {
+  const node = openSheet("library-new", { label: "New library" });
+  let hidden = false;
 
-  if (!hidden) {
-    const library = await createLibrary(ctx, name);
-    state.libraries.push(library);
-  } else {
-    const passphrase = await promptPassphrase(`Set a passphrase for "${name}"`);
-    if (!passphrase) return;
-    const confirmed = await promptPassphrase("Confirm that passphrase");
-    if (confirmed !== passphrase) {
-      alert("Passphrases didn't match — try again from “New library”.");
+  const nameInput = el<HTMLInputElement>("input.text-input", { type: "text", placeholder: "e.g. Photos" });
+  const passInput = el<HTMLInputElement>("input.text-input", { type: "password", placeholder: "Passphrase" });
+  const passConfirm = el<HTMLInputElement>("input.text-input", { type: "password", placeholder: "Confirm passphrase" });
+  const passFields = el("div", { hidden: true }, [formField("Passphrase", passInput), formField("Confirm passphrase", passConfirm)]);
+
+  const hideRow = el("div.toggle-row", {}, [
+    el("div.t-text", {}, [
+      el("div.t-title", { text: "Hide behind a passphrase" }),
+      el("div.t-desc", { text: "Nothing in the interface reveals it again afterward — only its own shortcut and this passphrase." }),
+    ]),
+    switchControl(false, "Hide behind a passphrase", (next) => {
+      hidden = next;
+      passFields.hidden = !next;
+    }),
+  ]);
+
+  const status = el("p.empty", { text: "" });
+  const createBtn = el<HTMLButtonElement>("button.btn.go", { type: "button", text: "Create", onClick: () => void submit() });
+
+  async function submit(): Promise<void> {
+    const name = nameInput.value.trim();
+    if (!name) {
+      status.textContent = "Give the library a name.";
       return;
     }
-    const { library, contentKey } = await createHiddenLibrary(ctx, name, passphrase);
-    state.libraries.push(library);
-    revealed.set(library.id, { contentKey, name });
+    createBtn.disabled = true;
+    if (hidden) {
+      const passphrase = passInput.value;
+      if (!passphrase) {
+        status.textContent = "Set a passphrase.";
+        createBtn.disabled = false;
+        return;
+      }
+      if (passphrase !== passConfirm.value) {
+        status.textContent = "Passphrases don't match.";
+        createBtn.disabled = false;
+        return;
+      }
+      const { library, contentKey } = await createHiddenLibrary(ctx, name, passphrase);
+      state.libraries.push(library);
+      revealed.set(library.id, { contentKey, name });
+    } else {
+      const library = await createLibrary(ctx, name);
+      state.libraries.push(library);
+    }
+    node.close();
+    selectLibrary(state.libraries[state.libraries.length - 1]!.id);
   }
 
-  selectLibrary(state.libraries[state.libraries.length - 1]!.id);
+  node.append(
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "New library"),
+      el("div.sheet-scroll", {}, [formField("Name", nameInput), hideRow, passFields, status]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), createBtn]),
+    ])
+  );
+  nameInput.focus();
 }
 
-function promptRenameLibrary(library: LibraryMeta): void {
-  const current = displayName(library);
-  const name = prompt("Rename library", current)?.trim();
-  if (!name || name === current) return;
-  const contentKey = library.hidden ? revealed.get(library.id)?.contentKey : undefined;
-  void renameLibrary(ctx, library, name, contentKey).then((updated) => {
-    state.libraries = state.libraries.map((l) => (l.id === updated.id ? updated : l));
-    const entry = revealed.get(library.id);
-    if (entry) revealed.set(library.id, { ...entry, name });
-    paintSidebar();
-    if (currentLibraryId === library.id) paintMain();
+function openRenameLibrarySheet(library: LibraryMeta): void {
+  const node = openSheet("library-rename", { label: "Rename library" });
+  const input = el<HTMLInputElement>("input.text-input", { type: "text", value: displayName(library) });
+
+  function submit(): void {
+    const name = input.value.trim();
+    node.close();
+    if (!name || name === displayName(library)) return;
+    const contentKey = library.hidden ? revealed.get(library.id)?.contentKey : undefined;
+    void renameLibrary(ctx, library, name, contentKey).then((updated) => {
+      state.libraries = state.libraries.map((l) => (l.id === updated.id ? updated : l));
+      const entry = revealed.get(library.id);
+      if (entry) revealed.set(library.id, { ...entry, name });
+      paintSidebar();
+      if (currentLibraryId === library.id) paintMain();
+    });
+  }
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    }
   });
+
+  node.append(
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Rename library"),
+      el("div.sheet-scroll", {}, [formField("Name", input)]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), el<HTMLButtonElement>("button.btn.go", { type: "button", text: "Save", onClick: submit })]),
+    ])
+  );
+  input.focus();
+  input.select();
 }
 
 function removeLibrary(library: LibraryMeta): void {
@@ -237,7 +340,9 @@ function paintMain(): void {
   const backBtn = el("button.notes-back", { type: "button", "aria-label": "Back to libraries", onClick: () => backToList() });
   backBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>';
   const title = el("div.notes-title", {}, [displayName(library)]);
-  const uploadBtn = el<HTMLButtonElement>("button.chip.act", { type: "button", text: "Upload", onClick: () => void promptUpload(library) });
+  const uploadBtn = el<HTMLButtonElement>("button.chip.act", { type: "button", text: "Upload", onClick: () => openUploadSheet(library) });
+
+  const list = el("div.notes-list");
 
   const searchInput = el<HTMLInputElement>("input.text-input.library-search", {
     type: "search",
@@ -248,15 +353,44 @@ function paintMain(): void {
       void paintFileList(list, library);
     },
   });
+  const filterToggle = el<HTMLButtonElement>("button.chip", {
+    type: "button",
+    text: "Filter",
+    "aria-pressed": String(filtersVisible),
+    onClick: () => {
+      filtersVisible = !filtersVisible;
+      paintMain();
+    },
+  });
 
-  const list = el("div.notes-list");
-  appendChildren(mainEl, el("div.notes-main-head", {}, [backBtn, title, uploadBtn]), searchInput, list);
+  const children: HTMLElement[] = [el("div.notes-main-head", {}, [backBtn, title, uploadBtn]), el("div.library-toolbar", {}, [searchInput, filterToggle])];
+  if (filtersVisible) children.push(typeFilterRow(library));
+  children.push(list);
+  appendChildren(mainEl, ...children);
   void paintFileList(list, library);
+}
+
+function typeFilterRow(library: LibraryMeta): HTMLElement {
+  const files = state.files.filter((f) => f.libraryId === library.id);
+  const present = new Set(files.map((f) => categoryOf(f.mimeType)));
+
+  const chip = (label: string, active: boolean, onClick: () => void): HTMLElement =>
+    el("button.chip", { type: "button", text: label, "aria-pressed": String(active), onClick: () => {
+      onClick();
+      paintMain();
+    } });
+
+  const chips = [chip("All", activeCategory === null, () => (activeCategory = null))];
+  for (const cat of Object.keys(CATEGORY_LABELS) as FileCategory[]) {
+    if (!present.has(cat)) continue;
+    chips.push(chip(CATEGORY_LABELS[cat], activeCategory === cat, () => (activeCategory = cat)));
+  }
+  return el("div.library-filters", {}, chips);
 }
 
 async function paintFileList(container: HTMLElement, library: LibraryMeta): Promise<void> {
   const contentKey = library.hidden ? revealed.get(library.id)?.contentKey : undefined;
-  const files = state.files.filter((f) => f.libraryId === library.id);
+  const files = state.files.filter((f) => f.libraryId === library.id && (activeCategory === null || categoryOf(f.mimeType) === activeCategory));
   const rows = await Promise.all(files.map(async (file) => ({ file, meta: await fileMeta(file, contentKey) })));
 
   const q = searchQuery.trim().toLowerCase();
@@ -282,46 +416,120 @@ function fileRow(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey
   ]);
 }
 
-async function promptUpload(library: LibraryMeta): Promise<void> {
-  const input = el<HTMLInputElement>("input", { type: "file", style: "display:none" });
-  document.body.appendChild(input);
-  const file = await new Promise<File | null>((resolve) => {
-    input.addEventListener("change", () => resolve(input.files?.[0] ?? null), { once: true });
-    input.click();
+function openUploadSheet(library: LibraryMeta): void {
+  const node = openSheet("library-upload", { label: "Upload a file" });
+  let chosenFile: File | null = null;
+
+  const fileInput = el<HTMLInputElement>("input.text-input", { type: "file" });
+  const titleInput = el<HTMLInputElement>("input.text-input", { type: "text", placeholder: "Title" });
+  const descInput = el<HTMLTextAreaElement>("textarea.text-input", { rows: 3, placeholder: "Description (optional)" });
+  const keywordsInput = el<HTMLInputElement>("input.text-input", { type: "text", placeholder: "e.g. holiday, receipt, cat" });
+
+  fileInput.addEventListener("change", () => {
+    chosenFile = fileInput.files?.[0] ?? null;
+    if (chosenFile && !titleInput.value.trim()) titleInput.value = chosenFile.name;
   });
-  input.remove();
-  if (!file) return;
 
-  const title = prompt("Title", file.name)?.trim();
-  if (!title) return;
-  const description = prompt("Description (optional)")?.trim() ?? "";
-  const keywordsRaw = prompt("Keywords, comma separated (optional)")?.trim() ?? "";
-  const keywords = keywordsRaw
-    ? keywordsRaw
-        .split(",")
-        .map((k) => k.trim())
-        .filter(Boolean)
-    : [];
+  const status = el("p.empty", { text: "" });
+  const uploadBtn = el<HTMLButtonElement>("button.btn.go", { type: "button", text: "Upload", onClick: () => void submit() });
 
-  const contentKey = library.hidden ? revealed.get(library.id)?.contentKey : undefined;
-  const status = el("p.empty", { text: "Uploading… 0%" });
-  mainEl?.appendChild(status);
-  try {
-    const uploaded = await uploadFile(ctx, library.id, file, { title, description, keywords }, contentKey, (p) => {
-      status.textContent = `Uploading… ${Math.round((p.sentBytes / p.totalBytes) * 100)}%`;
-    });
-    state.files.push(uploaded);
-    if (currentLibraryId === library.id) paintMain();
-  } catch (err) {
-    console.error("library upload failed", err);
-    status.textContent = "Upload failed.";
+  async function submit(): Promise<void> {
+    if (!chosenFile) {
+      status.textContent = "Choose a file first.";
+      return;
+    }
+    const title = titleInput.value.trim() || chosenFile.name;
+    const description = descInput.value.trim();
+    const keywords = keywordsInput.value
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+
+    uploadBtn.disabled = true;
+    fileInput.disabled = true;
+    status.textContent = "Uploading… 0%";
+    const contentKey = library.hidden ? revealed.get(library.id)?.contentKey : undefined;
+    try {
+      const uploaded = await uploadFile(ctx, library.id, chosenFile, { title, description, keywords }, contentKey, (p) => {
+        status.textContent = `Uploading… ${Math.round((p.sentBytes / p.totalBytes) * 100)}%`;
+      });
+      state.files.push(uploaded);
+      node.close();
+      if (currentLibraryId === library.id) paintMain();
+    } catch (err) {
+      console.error("library upload failed", err);
+      status.textContent = "Upload failed.";
+      uploadBtn.disabled = false;
+      fileInput.disabled = false;
+    }
   }
+
+  node.append(
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Upload a file"),
+      el("div.sheet-scroll", {}, [formField("File", fileInput), formField("Title", titleInput), formField("Description", descInput), formField("Keywords, comma separated", keywordsInput), status]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), uploadBtn]),
+    ])
+  );
+}
+
+function openEditFileSheet(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey | undefined): void {
+  const node = openSheet("library-edit", { label: "Edit file" });
+  const titleInput = el<HTMLInputElement>("input.text-input", { type: "text", value: meta.title });
+  const descInput = el<HTMLTextAreaElement>("textarea.text-input", { rows: 3, text: meta.description });
+  const keywordsInput = el<HTMLInputElement>("input.text-input", { type: "text", value: meta.keywords.join(", ") });
+  const status = el("p.empty", { text: "" });
+  const saveBtn = el<HTMLButtonElement>("button.btn.go", { type: "button", text: "Save", onClick: () => void submit() });
+
+  async function submit(): Promise<void> {
+    const title = titleInput.value.trim();
+    if (!title) {
+      status.textContent = "Give it a title.";
+      return;
+    }
+    saveBtn.disabled = true;
+    const description = descInput.value.trim();
+    const keywords = keywordsInput.value
+      .split(",")
+      .map((k) => k.trim())
+      .filter(Boolean);
+    const updated = await updateFileMeta(ctx, file, { title, description, keywords }, contentKey);
+    state.files = state.files.map((f) => (f.id === updated.id ? updated : f));
+    node.close();
+    paintMain();
+  }
+
+  node.append(
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Edit file"),
+      el("div.sheet-scroll", {}, [formField("Title", titleInput), formField("Description", descInput), formField("Keywords, comma separated", keywordsInput), status]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), saveBtn]),
+    ])
+  );
+  titleInput.focus();
+}
+
+async function removeFile(file: LibraryFile): Promise<void> {
+  if (!confirm("Delete this file? This can't be undone.")) return;
+  await deleteFile(ctx, file);
+  state.files = state.files.filter((f) => f.id !== file.id);
+  paintMain();
 }
 
 async function openPreview(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey | undefined): Promise<void> {
   const node = openSheet("library-preview", { label: meta.title || "File" });
   const scroll = el("div.sheet-scroll", {}, [el("p.empty", { text: "Loading…" })]);
-  node.append(el("div.sheet-inner", {}, [sheetHead(node, meta.title || "Untitled", formatSize(file.byteSize)), scroll]));
+  const editBtn = el<HTMLButtonElement>("button.btn.ghost", { type: "button", text: "Edit", onClick: () => openEditFileSheet(file, meta, contentKey) });
+  const deleteBtn = el<HTMLButtonElement>("button.btn.ghost.danger", {
+    type: "button",
+    text: "Delete",
+    onClick: () => {
+      node.close();
+      void removeFile(file);
+    },
+  });
+  const foot = sheetFoot([editBtn, deleteBtn]);
+  node.append(el("div.sheet-inner", {}, [sheetHead(node, meta.title || "Untitled", formatSize(file.byteSize)), scroll, foot]));
 
   try {
     const blob = await downloadFile(file, ctx, contentKey, (p) => {
@@ -341,7 +549,7 @@ async function openPreview(file: LibraryFile, meta: LibraryFileMeta, contentKey:
       scroll.appendChild(el("p.empty", { text: "This file type can't be previewed here." }));
     }
     if (meta.description) scroll.appendChild(el("p.empty", { text: meta.description }));
-    scroll.appendChild(el<HTMLAnchorElement>("a.btn.ghost.wide", { href: url, download: meta.title || "file", text: "Download" }));
+    foot.insertBefore(el<HTMLAnchorElement>("a.btn.ghost.wide", { href: url, download: meta.title || "file", text: "Download" }), editBtn);
   } catch (err) {
     console.error("library file download failed", err);
     clear(scroll);
@@ -406,9 +614,9 @@ async function handleRevealPrompt(): Promise<void> {
 }
 
 /** A masked-input prompt, reused for both setting a hidden library's passphrase and the
- * reveal shortcut above — the one piece of custom UI in this tile worth building instead of
- * the plain window.prompt() every other text entry here uses (promptNewLibrary,
- * promptRenameLibrary, promptUpload), since a passphrase needs its input actually hidden. */
+ * reveal shortcut above — the one piece of custom UI in this tile that isn't the standard
+ * form-field shape (openNewLibrarySheet etc.), since a passphrase needs its input actually
+ * hidden and its own single-purpose sheet. */
 function promptPassphrase(title: string): Promise<string | null> {
   return new Promise((resolve) => {
     const node = openSheet("library-passphrase", { label: title });

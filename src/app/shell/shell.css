@@ -12067,3 +12067,41 @@ body.is-desktop .notes-back {
 img.library-preview-media {
   object-fit: contain;
 }
+
+/* A labeled field inside a sheet form — Library's "New library"/"Upload"/"Edit file" sheets
+ * (tiles/library/index.ts) are the first multi-field forms in the app; single-value entry
+ * elsewhere has always managed with a prompt() or the passphrase sheet's bare, label-less
+ * `.text-input`. A label matters once there's more than one field to tell apart. */
+.form-field {
+  display: block;
+  margin-bottom: var(--sp3);
+}
+.form-field-label {
+  display: block;
+  font-size: 12px;
+  color: var(--n500);
+  margin-bottom: 6px;
+}
+textarea.text-input {
+  resize: vertical;
+  min-height: 72px;
+  font: inherit;
+}
+
+/* The search box and the filter toggle sit on one line — Library's file view
+ * (tiles/library/index.ts). */
+.library-toolbar {
+  display: flex;
+  gap: var(--sp3);
+  margin-bottom: var(--sp3);
+}
+.library-toolbar .library-search {
+  flex: 1;
+  margin-bottom: 0;
+}
+.library-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp2);
+  margin-bottom: var(--sp3);
+}

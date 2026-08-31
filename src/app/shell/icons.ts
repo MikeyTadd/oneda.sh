@@ -28,6 +28,7 @@ const RAW: Record<string, string> = {
   camera: '<path d="M4 8.5a1 1 0 0 1 1-1h2.3l1-1.7h7.4l1 1.7H19a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/><circle cx="12" cy="13" r="3.4"/>',
   wallet: '<rect x="3.5" y="6.5" width="17" height="12" rx="2"/><path d="M15 12.5h3.5v2.5H15a1.5 1.5 0 0 1 0-3Z"/><path d="M3.5 9.5h17"/>',
   tile: '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/>',
+  folder: '<path d="M4 7.5a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/>',
   // A fingerprint rather than a key or a padlock — what the device actually asks for, and
   // what the platform's own passkey sheet shows. Lifted verbatim from F1 Apex's g-passkey
   // (public/index.html), the sibling project this design system is copied from — not

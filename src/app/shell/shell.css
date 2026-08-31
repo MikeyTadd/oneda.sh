@@ -11567,3 +11567,327 @@ button.row.as-button {
   width: 17px;
   height: 17px;
 }
+
+/* ── Notes: folder tree + note list + editor ─────────────────────────────
+ * Its own responsive layout rather than the shared `.split` — a folder tree
+ * and note list is real navigation (drill in, then back out), not a side
+ * note about a main column, so it needs a genuine two-state phone view
+ * rather than two columns stacked under a hairline. `data-view` (set by
+ * tiles/notes/index.ts) picks which pane shows on a phone; `body.is-desktop`
+ * (shell.ts's own breakpoint, matched here rather than a second one of its
+ * own) shows both, always, as a fixed two-column grid. */
+.notes-shell {
+  min-height: 0;
+  height: 100%;
+}
+.notes-sidebar,
+.notes-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.notes-shell[data-view="list"] .notes-main {
+  display: none;
+}
+.notes-shell[data-view="editor"] .notes-sidebar {
+  display: none;
+}
+body.is-desktop .notes-shell {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: var(--sp6);
+  align-items: start;
+}
+body.is-desktop .notes-shell[data-view] .notes-sidebar,
+body.is-desktop .notes-shell[data-view] .notes-main {
+  display: flex;
+}
+
+.notes-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp3);
+  padding-bottom: var(--sp3);
+  border-bottom: 1px solid var(--hairline);
+}
+.notes-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.notes-crumb {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--n400);
+  cursor: pointer;
+}
+.notes-crumb:hover:not(:disabled) {
+  color: var(--n200);
+}
+.notes-crumb:disabled {
+  color: var(--text);
+  cursor: default;
+}
+.notes-crumb-sep {
+  color: var(--n700);
+  font-size: 12px;
+}
+
+.notes-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-top: var(--sp2);
+}
+.notes-list .row[data-current="true"] {
+  background: var(--surface);
+}
+.notes-row-main {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  min-width: 0;
+  flex: 1;
+}
+.notes-sidebar-foot {
+  padding-top: var(--sp3);
+  border-top: 1px solid var(--hairline);
+  margin-top: var(--sp2);
+}
+.notes-sidebar-foot .btn {
+  width: 100%;
+  text-align: center;
+}
+
+.notes-empty-main {
+  margin: auto;
+}
+
+.notes-main-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp3);
+  padding-bottom: var(--sp3);
+  margin-bottom: var(--sp3);
+  border-bottom: 1px solid var(--hairline);
+}
+.notes-back {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--n400);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -11px 0 -11px -8px;
+  cursor: pointer;
+}
+.notes-back svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+body.is-desktop .notes-back {
+  display: none;
+}
+.notes-title {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  padding: 6px 0;
+}
+.notes-title:focus {
+  outline: none;
+}
+.notes-title::placeholder {
+  color: var(--n600);
+}
+
+.notes-editor-host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The editor itself (tiles/notes/editor.ts) — toolbar, the formatted
+ * (contenteditable) view, and the raw-markdown code view. */
+.note-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp3);
+  padding-bottom: var(--sp3);
+  margin-bottom: var(--sp3);
+  border-bottom: 1px solid var(--hairline);
+}
+.note-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.note-tool {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--n400);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.note-tool:hover {
+  color: var(--n100);
+  background: var(--n800);
+}
+.note-tool svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.note-view-toggle {
+  margin-left: auto;
+  appearance: none;
+  padding: 6px 12px;
+  min-height: 32px;
+  border-radius: 999px;
+  color: var(--n400);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--n800);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.note-view-toggle:hover {
+  color: var(--n100);
+  box-shadow: inset 0 0 0 1px var(--n700);
+}
+
+.note-body,
+.note-code {
+  flex: 1;
+  min-height: 200px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.note-body {
+  overflow-y: auto;
+  outline: none;
+}
+.note-body :first-child {
+  margin-top: 0;
+}
+.note-body h1,
+.note-body h2,
+.note-body h3 {
+  line-height: 1.3;
+  margin: 1.2em 0 0.5em;
+}
+.note-body h1 {
+  font-size: 1.5em;
+}
+.note-body h2 {
+  font-size: 1.25em;
+}
+.note-body h3 {
+  font-size: 1.1em;
+}
+.note-body p {
+  margin: 0.7em 0;
+}
+.note-body ul,
+.note-body ol {
+  padding-left: 1.4em;
+  margin: 0.7em 0;
+}
+.note-body blockquote {
+  margin: 0.7em 0;
+  padding: 2px 0 2px 1em;
+  border-left: 3px solid var(--n700);
+  color: var(--n400);
+}
+.note-body pre {
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: var(--sp3) var(--sp4);
+  overflow-x: auto;
+  font: 13px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.note-body code {
+  font: 0.9em ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+.note-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.note-body a {
+  color: var(--a300);
+}
+.note-body hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+  margin: 1.2em 0;
+}
+.note-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.7em 0;
+  font-size: 0.9em;
+}
+.note-body th,
+.note-body td {
+  border: 1px solid var(--n800);
+  padding: 6px 10px;
+  text-align: left;
+}
+.note-body th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.note-code {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: 0;
+  font: 13px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+}
+.note-code:focus {
+  outline: none;
+}

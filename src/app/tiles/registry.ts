@@ -21,7 +21,16 @@ const REGISTRY_KEY = "shell:tile-registry";
 
 export async function loadRegistry(ctx: TileContext): Promise<TileRegistryEntry[]> {
   const entries = await ctx.storage.get<TileRegistryEntry[]>(REGISTRY_KEY);
-  return entries ?? [];
+  if (entries) return entries;
+
+  // Nothing saved yet, anywhere — not "every tile was removed" (that state is an explicit
+  // empty array, synced like any other write) but "this account has never had a registry at
+  // all". There's no install flow yet (a future tile marketplace, per the design doc), so the
+  // only sensible default ships with everything this build actually has rather than an empty
+  // nav no one could ever fill in.
+  const bootstrap = Object.keys(TILE_LOADERS).map((tileId, order) => ({ tileId, order }));
+  await saveRegistry(ctx, bootstrap);
+  return bootstrap;
 }
 
 export async function saveRegistry(ctx: TileContext, entries: TileRegistryEntry[]): Promise<void> {

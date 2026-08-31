@@ -226,13 +226,19 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       return res;
     }
     case "/auth/whoami": {
-      // Lets the pre-auth screen (src/preauth/auth.ts) tell "you've never signed in" apart
-      // from "you have a session, you're just refreshing" — the session cookie itself is
-      // HttpOnly and unreadable from that page's own JS, so it has nothing else to check
-      // this against. Deliberately answers with nothing but a boolean: this route runs
-      // before any credential ceremony, so it must never leak which account or device it is.
-      const session = await validateSession(env, extractSessionToken(request));
-      return Response.json({ authenticated: session !== null });
+      // Lets the pre-auth screen (src/preauth/auth.ts) tell apart three states the session
+      // cookie alone can't distinguish (it's HttpOnly, so that page's JS can't read it):
+      // "you've never signed in", "you have a session, you're just refreshing" and "this
+      // account already exists but not on this device/browser" — the last is what decides
+      // whether the "First time? Set up your passkey" link would work or 403 (the same
+      // `COUNT(*)` register/start's bootstrap gate uses). Deliberately answers with nothing
+      // but two booleans: this route runs before any credential ceremony, so it must never
+      // leak which account or device it is.
+      const [session, userCount] = await Promise.all([
+        validateSession(env, extractSessionToken(request)),
+        env.DB.prepare(`SELECT COUNT(*) as count FROM users`).first<{ count: number }>(),
+      ]);
+      return Response.json({ authenticated: session !== null, accountExists: (userCount?.count ?? 0) > 0 });
     }
     case "/auth/logout": {
       // Ends this device's session and clears the cookie. What makes Settings'

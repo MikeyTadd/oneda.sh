@@ -40,22 +40,27 @@ recoverBtn.addEventListener("click", () => showRecoverForm());
 wipeBtn.addEventListener("click", () => showWipeConfirm());
 
 // The session cookie is HttpOnly (deliberately — this page's own JS has no business reading
-// it), so this is the only way this screen can tell "you've never signed in" apart from
-// "you have a session, you're just refreshing" — a distinction worth making since unlock()
-// still has to run the full passkey ceremony either way (the DEK lives in memory only and
-// refresh always throws that away). Fire-and-forget: offline or a slow reply just leaves the
-// generic first-visit copy up rather than blocking the screen on it.
+// it), so this is the only way this screen can tell apart "you've never signed in", "you have
+// a session, you're just refreshing" and "the account exists but not on this device" — the
+// last matters because registration is a one-time bootstrap gate (register/start 403s once
+// any account exists, see that handler), so "First time?" is dead weight — worse, a
+// guaranteed failure — on every device but the very first ever to see this screen. Reusing a
+// live session still runs the full passkey ceremony either way (the DEK lives in memory only
+// and refresh always throws that away), which is why "authenticated" only changes the copy,
+// not whether unlock() runs. Fire-and-forget: offline or a slow reply just leaves the generic
+// first-visit copy and link up rather than blocking the screen on it.
 void (async () => {
   try {
     const res = await fetch("/auth/whoami", { credentials: "include" });
     if (!res.ok) return;
-    const { authenticated } = (await res.json()) as { authenticated: boolean };
-    if (authenticated) {
-      statusEl.textContent = "Welcome back — confirm it's you";
-      setupBtn.hidden = true;
-    }
+    const { authenticated, accountExists } = (await res.json()) as {
+      authenticated: boolean;
+      accountExists: boolean;
+    };
+    if (accountExists) setupBtn.hidden = true;
+    if (authenticated) statusEl.textContent = "Welcome back — confirm it's you";
   } catch {
-    // No signal either way — leave the generic copy.
+    // No signal either way — leave the generic copy and link.
   }
 })();
 

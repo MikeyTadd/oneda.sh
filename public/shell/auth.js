@@ -30,6 +30,10 @@ async function unlock() {
         ...c,
         id: base64UrlToBuffer(c.id),
       })),
+      // Set here, never taken from the response: the salt has to reach the authenticator as
+      // real bytes (it can't survive JSON), and it decides which master key gets derived, so
+      // the client owns it rather than trusting the server to name it (section 2.2).
+      extensions: { prf: { eval: { first: PRF_SALT } } },
     };
 
     const assertion = await navigator.credentials.get({ publicKey });
@@ -67,7 +71,7 @@ async function setup() {
     const startRes = await fetch("/auth/register/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ userName: "you" }),
+      body: JSON.stringify({ userName: "onedash" }),
       credentials: "include",
     });
     if (!startRes.ok) {

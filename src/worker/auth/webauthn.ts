@@ -33,6 +33,10 @@ export async function startRegistration(env: Env, userId: string, userName: stri
     rpName: RP_NAME,
     rpID,
     userName,
+    // Whatever this says is what the passkey is labelled in iCloud Keychain / 1Password,
+    // permanently — it's fixed at registration and can't be changed without re-registering.
+    // Without it the label renders blank (section 2.1 has no usernames to draw on).
+    userDisplayName: userName,
     userID: new TextEncoder().encode(userId),
     attestationType: "none",
     authenticatorSelection: { residentKey: "required", userVerification: "required" },
@@ -60,10 +64,16 @@ export async function finishRegistration(
 
 export async function startAuthentication(env: Env) {
   const { rpID } = rpConfig(env);
+  // Deliberately no `prf.eval` salt here. It used to be sent, and it was doubly wrong: a
+  // Uint8Array JSON-serialises to {"0":111,"1":110,...}, which is not the BufferSource the
+  // WebAuthn API needs, so the client silently got no PRF result and login could never
+  // derive the master key. Even encoded properly it shouldn't come from the server — the
+  // salt decides which key gets derived (section 2.2), so letting a response dictate it
+  // would let a tampered-with server steer the client onto a different master key. The
+  // salt is a fixed constant the client holds itself (public/shell/auth.js's PRF_SALT).
   return generateAuthenticationOptions({
     rpID,
     userVerification: "required",
-    extensions: { prf: { eval: { first: prfSaltFor("master-key") } } } as unknown as AuthenticationExtensionsClientInputs,
   });
 }
 

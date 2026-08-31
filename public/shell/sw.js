@@ -6,7 +6,9 @@
 // Bump on any shell change — that bump is what actually ships a new shell.
 const CACHE_NAME = "onedash-shell-v3";
 const SHELL_ASSETS = [
-  "/shell/index.html",
+  // The lock screen is served at the scope root (public/index.html), which is what
+  // manifest.json's start_url points at — not /shell/index.html.
+  "/",
   "/shell/auth.js",
   "/shell/manifest.json",
   // Self-hosted Inter. In the precache so the lock screen renders in the

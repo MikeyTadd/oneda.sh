@@ -3,7 +3,13 @@ main = "src/worker/index.ts"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]
 
-# routes = [{ pattern = "oneda.sh", custom_domain = true }]
+routes = [{ pattern = "oneda.sh", custom_domain = true }]
+
+# oneda.sh is the only origin this app is reachable on. Not just tidiness: the WebAuthn RP
+# ID is the domain (auth/webauthn.ts), so a passkey is bound to it at registration — a
+# workers.dev twin would be an origin no ceremony can complete on anyway, and one more
+# public surface than section 13 wants.
+workers_dev = false
 
 # Public pre-auth shell only (section 13.1) — index.html/auth.js/manifest/sw/icons.
 # Everything under /app/ (tile bundles) is deliberately NOT served from here; it goes
@@ -44,7 +50,9 @@ bucket_name = "onedash-blobs"
 crons = ["*/15 * * * *"]
 
 [vars]
-ENVIRONMENT = "development"
+# The deployed value. `wrangler dev` reads .dev.vars over the top of this, so set it there
+# for local runs rather than flipping it back and forth here.
+ENVIRONMENT = "production"
 
 # Secrets (set via `wrangler secret put`, never committed):
 #   WEBAUTHN_RP_ID, WEBAUTHN_ORIGIN

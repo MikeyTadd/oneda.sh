@@ -84,6 +84,39 @@
       display: block; margin-top: 1rem; background: none; border: none; color: #9184d9;
       font-size: 0.85rem; padding: 0.25rem; text-decoration: underline;
     }
+    /* The recovery phrase display/confirm and the "recover with a phrase" redemption form —
+       both full-screen takeovers over the lock screen, built by auth.ts. Kept in this
+       stylesheet rather than injected by JS so it survives the same build-time minification
+       (scripts/build-app.mjs) as everything else here. */
+    .overlay {
+      position: fixed; inset: 0; z-index: 10; background: #161826;
+      display: flex; align-items: flex-start; justify-content: center;
+      overflow-y: auto; padding: max(2rem, env(safe-area-inset-top)) 1.25rem 2rem;
+    }
+    .overlay[hidden] { display: none; }
+    .overlay-inner { max-width: 420px; width: 100%; margin: auto 0; }
+    .overlay h2 { font-size: 1.15rem; margin: 0 0 0.5rem; text-align: center; }
+    .overlay p.sub { opacity: 0.7; font-size: 0.9rem; text-align: center; margin: 0 0 1.25rem; line-height: 1.5; }
+    .phrase-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1.5rem;
+    }
+    .phrase-grid .w {
+      background: #1f2233; border-radius: 8px; padding: 0.5rem 0.6rem;
+      font-size: 0.9rem; display: flex; gap: 0.4rem; align-items: baseline;
+    }
+    .phrase-grid .w b { opacity: 0.45; font-weight: 400; min-width: 1.2em; }
+    .confirm-row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem; }
+    .confirm-row label { flex: none; width: 4.5rem; opacity: 0.7; font-size: 0.9rem; }
+    input.word-input, textarea.phrase-input {
+      flex: 1; background: #1f2233; border: 1px solid #2c3049; border-radius: 8px;
+      color: #e9e9ed; padding: 0.55rem 0.7rem; font: inherit; font-size: 16px;
+    }
+    textarea.phrase-input { width: 100%; min-height: 4.5rem; resize: vertical; margin-bottom: 1rem; }
+    .overlay button { width: 100%; display: block; margin-top: 0.75rem; }
+    .overlay button.ghost {
+      background: none; border: 1px solid #2c3049; color: #c9c9d8;
+    }
+    .err { color: #e2777f; font-size: 0.85rem; margin: 0.6rem 0 0; min-height: 1.2em; text-align: center; }
   </style>
 </head>
 <body>
@@ -106,7 +139,11 @@
     <!-- Bootstrap-only (section 2.1): the Worker only accepts /auth/register/* until the
          first account exists, so this is only ever useful once, on a fresh deployment. -->
     <button class="setup-link" id="setup" type="button">First time? Set up your passkey</button>
+    <button class="setup-link" id="recover" type="button">Lost your passkey? Recover with your phrase</button>
   </div>
+  <!-- Populated entirely by auth.ts: the recovery phrase display/confirm at registration,
+       and the phrase-entry redemption form. Nothing here is static markup. -->
+  <div class="overlay" id="overlay" hidden></div>
   <!-- Says the same thing in the form the categorisers actually parse. -->
   <script type="application/ld+json">
   {

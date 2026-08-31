@@ -36,3 +36,14 @@ export function fromD1Blob(value: D1Blob): Uint8Array {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   return Uint8Array.from(value);
 }
+
+/** Constant-time byte comparison — length first (its own leak, but the verifier is always
+ * a fixed-length SHA-256 digest, so this branch never actually depends on caller input),
+ * then every byte regardless of an early mismatch. Used to check the recovery phrase's
+ * auth verifier (section 2.1) without a stray `===` on a Uint8Array timing the guess. */
+export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= (a[i] as number) ^ (b[i] as number);
+  return diff === 0;
+}

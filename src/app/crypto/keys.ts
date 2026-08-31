@@ -8,10 +8,10 @@
 
 // Exactly 32 bytes, because that is what CTAP2's hmac-secret (which PRF is built on)
 // takes, and not every platform hashes a shorter input up to length — Safari returns no
-// PRF result for one, Chromium accepts it. Must match public/shell/auth.js, which runs the
-// same derivation pre-auth.
+// PRF result for one, Chromium accepts it. Exported so the pre-auth bundle
+// (src/preauth/auth.ts) derives against the identical salt without duplicating it.
 let prfSaltPromise: Promise<Uint8Array> | null = null;
-function prfSalt(): Promise<Uint8Array> {
+export function prfSalt(): Promise<Uint8Array> {
   prfSaltPromise ??= crypto.subtle
     .digest("SHA-256", new TextEncoder().encode("onedash:prf:master-key"))
     .then((buf) => new Uint8Array(buf));
@@ -23,8 +23,25 @@ export interface DerivedIdentity {
   dek: CryptoKey;
 }
 
-/** Runs the WebAuthn PRF ceremony and derives the AES-256-GCM master key via HKDF.
- * Requires a platform authenticator with PRF extension support (section 2.1). */
+/** The HKDF half of the ceremony, split out so a caller that already ran its own
+ * navigator.credentials.get() (the pre-auth login/setup flow, which needs the raw
+ * assertion for other reasons too) can derive from the PRF output it already has,
+ * rather than running a second, redundant ceremony through deriveMasterKey below. */
+export async function deriveMasterKeyFromPrf(prfOutput: ArrayBuffer): Promise<CryptoKey> {
+  const hkdfKey = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: (await prfSalt()) as BufferSource, info: new TextEncoder().encode("onedash-master-key") },
+    hkdfKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["wrapKey", "unwrapKey"]
+  );
+}
+
+/** Runs its own WebAuthn PRF ceremony and derives the AES-256-GCM master key via HKDF.
+ * Requires a platform authenticator with PRF extension support (section 2.1). For a caller
+ * that already has a PRF output from a ceremony it ran itself, use
+ * deriveMasterKeyFromPrf directly instead. */
 export async function deriveMasterKey(credentialId: BufferSource): Promise<CryptoKey> {
   const assertion = (await navigator.credentials.get({
     publicKey: {
@@ -43,15 +60,7 @@ export async function deriveMasterKey(credentialId: BufferSource): Promise<Crypt
   const prfOutput = extResults.prf?.results?.first;
   if (!prfOutput) throw new Error("authenticator did not return a PRF result");
 
-  const hkdfKey = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
-
-  return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: (await prfSalt()) as BufferSource, info: new TextEncoder().encode("onedash-master-key") },
-    hkdfKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["wrapKey", "unwrapKey"]
-  );
+  return deriveMasterKeyFromPrf(prfOutput);
 }
 
 /** Generates a fresh random DEK (section 2.3) — call once at account setup, never again
@@ -62,22 +71,43 @@ export async function generateDek(): Promise<CryptoKey> {
 
 /** Wraps the DEK with the master key for storage/sync (section 2.3) — safe to send to the
  * server, since it's useless without the PRF-derived master key. */
-export async function wrapDek(dek: CryptoKey, masterKey: CryptoKey): Promise<{ wrapped: ArrayBuffer; iv: Uint8Array }> {
+export async function wrapDek(dek: CryptoKey, masterKey: CryptoKey): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const wrapped = await crypto.subtle.wrapKey("raw", dek, masterKey, { name: "AES-GCM", iv });
-  return { wrapped, iv };
+  const ciphertext = await crypto.subtle.wrapKey("raw", dek, masterKey, { name: "AES-GCM", iv });
+  return { ciphertext, iv };
 }
 
-export async function unwrapDek(wrapped: ArrayBuffer, iv: Uint8Array, masterKey: CryptoKey): Promise<CryptoKey> {
+/** Non-extractable by default — a scripting attacker who can call encrypt/decrypt through
+ * this key while the page is open still can't read the raw bytes out and take them offline.
+ * `extractable: true` exists only for recovery (src/preauth/auth.ts), which has to re-wrap
+ * the same DEK under a brand-new passkey's master key — `wrapKey` requires the key it's
+ * wrapping to be extractable, since wrapping is export-then-encrypt under the hood. A caller
+ * that asks for it back out should immediately re-derive a non-extractable copy for anything
+ * that outlives the ceremony itself; see registerAccount/redeemRecovery. */
+export async function unwrapDek(
+  wrapped: ArrayBuffer,
+  iv: Uint8Array,
+  masterKey: CryptoKey,
+  extractable = false
+): Promise<CryptoKey> {
   return crypto.subtle.unwrapKey(
     "raw",
     wrapped,
     masterKey,
     { name: "AES-GCM", iv: iv as BufferSource },
     { name: "AES-GCM", length: 256 },
-    false,
+    extractable,
     ["encrypt", "decrypt"]
   );
+}
+
+/** Re-derives a non-extractable CryptoKey holding the same bytes. The one place this
+ * matters: after recovery re-wraps the DEK under a new passkey (which needed it extractable
+ * to do so), the copy the app actually runs with should go back to the same
+ * can't-be-exported posture every other login path already has. */
+export async function makeNonExtractable(dek: CryptoKey): Promise<CryptoKey> {
+  const raw = await crypto.subtle.exportKey("raw", dek);
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
 /** Record-level encryption under the DEK (section 2.3a) — the default for tile data.

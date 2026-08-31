@@ -18,7 +18,19 @@ import {
   type Env,
 } from "./lib/session.js";
 import { writeChallengeCookie, readChallengeCookie, clearChallengeCookie } from "./lib/challenge.js";
-import { base64UrlToBytes, bytesToBase64Url, toArrayBuffer, fromD1Blob, type D1Blob } from "./lib/bytes.js";
+import {
+  writeRecoverySessionCookie,
+  readRecoverySessionCookie,
+  clearRecoverySessionCookie,
+} from "./lib/recovery-session.js";
+import {
+  base64UrlToBytes,
+  bytesToBase64Url,
+  toArrayBuffer,
+  fromD1Blob,
+  timingSafeEqual,
+  type D1Blob,
+} from "./lib/bytes.js";
 import {
   startRegistration,
   finishRegistration,
@@ -150,6 +162,12 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         response: RegistrationResponseJSON;
         deviceLabel: string;
         wrappedDek: string; // base64url(iv[12] || AES-GCM ciphertext of the DEK) — section 2.3
+        // The recovery phrase's server-side half (section 2.1/10.3). Mandatory: an account
+        // with no recovery row is one bad passkey day away from permanent data loss, and
+        // that is not a state this endpoint is willing to create.
+        recoverySalt: string;
+        recoveryWrappedDek: string;
+        recoveryAuthVerifier: string; // base64url(SHA-256(authKey)) — never the key itself
       }>();
 
       let verification;
@@ -161,6 +179,9 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       }
       if (!verification.verified || !verification.registrationInfo) {
         return new Response("verification failed", { status: 401 });
+      }
+      if (!body.recoverySalt || !body.recoveryWrappedDek || !body.recoveryAuthVerifier) {
+        return new Response("recovery phrase data missing", { status: 400 });
       }
 
       const { credential } = verification.registrationInfo;
@@ -177,6 +198,15 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         env.DB.prepare(
           `INSERT INTO wrapped_keys (credential_id, user_id, wrapped_dek, updated_at) VALUES (?, ?, ?, ?)`
         ).bind(credential.id, userId, toArrayBuffer(base64UrlToBytes(body.wrappedDek)), now),
+        env.DB.prepare(
+          `INSERT INTO recovery_keys (user_id, salt, wrapped_dek, auth_verifier, created_at) VALUES (?, ?, ?, ?, ?)`
+        ).bind(
+          userId,
+          toArrayBuffer(base64UrlToBytes(body.recoverySalt)),
+          toArrayBuffer(base64UrlToBytes(body.recoveryWrappedDek)),
+          toArrayBuffer(base64UrlToBytes(body.recoveryAuthVerifier)),
+          now
+        ),
       ]);
 
       const token = await createSession(env, userId, credential.id, deviceLabel);
@@ -199,6 +229,96 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       }
       const res = new Response(null, { status: 204 });
       clearSessionCookie(res.headers);
+      return res;
+    }
+    case "/auth/recover/start": {
+      // No auth of any kind — this is the "I no longer have a passkey" entry point, so
+      // there is nothing to authenticate with yet. Single-user bootstrap (register/start's
+      // own gate above) means at most one row can ever exist here, so there's no username
+      // to ask for: this is *the* account or there isn't one to recover.
+      const row = await env.DB.prepare(`SELECT user_id, salt FROM recovery_keys LIMIT 1`).first<{
+        user_id: string;
+        salt: D1Blob;
+      }>();
+      if (!row) {
+        return new Response("no recovery phrase was ever set up on this account", { status: 404 });
+      }
+      return Response.json({ userId: row.user_id, salt: bytesToBase64Url(fromD1Blob(row.salt)) });
+    }
+    case "/auth/recover/verify": {
+      const body = await request.json<{ userId: string; verifier: string }>();
+      const row = await env.DB.prepare(`SELECT auth_verifier, wrapped_dek FROM recovery_keys WHERE user_id = ?`)
+        .bind(body.userId)
+        .first<{ auth_verifier: D1Blob; wrapped_dek: D1Blob }>();
+
+      const presented = base64UrlToBytes(body.verifier || "");
+      // Compared even on a miss (row undefined -> a zero verifier that can never match) so a
+      // request for an unknown userId doesn't return measurably faster than a wrong phrase
+      // for a real one.
+      const stored = row ? fromD1Blob(row.auth_verifier) : new Uint8Array(32);
+      if (!row || !timingSafeEqual(presented, stored)) {
+        return new Response("verification failed", { status: 401 });
+      }
+
+      // Proven possession of the phrase — safe to hand back the wrapped DEK now, and to let
+      // this device attach a fresh passkey to the account (recovery-session.ts's whole job).
+      const options = await startRegistration(env, body.userId, "onedash");
+      const res = Response.json({ wrappedDek: bytesToBase64Url(fromD1Blob(row.wrapped_dek)), registrationOptions: options });
+      writeChallengeCookie(res.headers, { challenge: options.challenge, userId: body.userId });
+      writeRecoverySessionCookie(res.headers, body.userId);
+      return res;
+    }
+    case "/auth/recover/finish": {
+      const recoverySession = readRecoverySessionCookie(request);
+      const challengePayload = readChallengeCookie(request);
+      // Both cookies, and they have to agree on which account this is for — finish is only
+      // reachable at all because verify already proved phrase possession; without that
+      // cookie this would be an unauthenticated way to attach a passkey to someone else's
+      // account, no different from register/finish with the bootstrap gate turned off.
+      if (!recoverySession || !challengePayload?.userId || challengePayload.userId !== recoverySession.userId) {
+        return new Response("recovery not verified or expired", { status: 401 });
+      }
+
+      const body = await request.json<{
+        response: RegistrationResponseJSON;
+        deviceLabel: string;
+        wrappedDek: string; // the *original* DEK, re-wrapped under this new passkey's master key
+      }>();
+
+      let verification;
+      try {
+        verification = await finishRegistration(env, challengePayload.challenge, body.response);
+      } catch (err) {
+        console.error("recovery verification threw", err);
+        return new Response("verification failed", { status: 401 });
+      }
+      if (!verification.verified || !verification.registrationInfo) {
+        return new Response("verification failed", { status: 401 });
+      }
+
+      const { credential } = verification.registrationInfo;
+      const userId = recoverySession.userId;
+      const deviceLabel = body.deviceLabel || "Unknown device";
+      const now = Date.now();
+
+      // No INSERT INTO users: recovery attaches a credential to an account that already
+      // exists, it never creates one. The account row from the original registration is
+      // untouched — this only replaces the lost passkey's entry point to the same DEK.
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO credentials (id, user_id, public_key, sign_count, device_label, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(credential.id, userId, toArrayBuffer(credential.publicKey), credential.counter, deviceLabel, now),
+        env.DB.prepare(
+          `INSERT INTO wrapped_keys (credential_id, user_id, wrapped_dek, updated_at) VALUES (?, ?, ?, ?)`
+        ).bind(credential.id, userId, toArrayBuffer(base64UrlToBytes(body.wrappedDek)), now),
+      ]);
+
+      const token = await createSession(env, userId, credential.id, deviceLabel);
+      const res = Response.json({ ok: true });
+      clearChallengeCookie(res.headers);
+      clearRecoverySessionCookie(res.headers);
+      setSessionCookie(res.headers, token);
       return res;
     }
     case "/auth/login/start": {

@@ -62,6 +62,25 @@ async function buildPublic() {
   await rm(PUBLIC_OUT, { recursive: true, force: true });
   let files = 0;
 
+  // The one file in the public surface with real logic and its own imports (the WebAuthn
+  // ceremony, section 2.1's recovery phrase). Bundled from TS for real — src/preauth/*.ts —
+  // rather than transformed in place like sw.js, which is why it's built up front instead of
+  // inside the walker below.
+  await mkdir(join(PUBLIC_OUT, "shell"), { recursive: true });
+  const authBundle = await build({
+    entryPoints: ["src/preauth/auth.ts"],
+    bundle: true,
+    format: "esm",
+    target: "es2022",
+    outfile: join(PUBLIC_OUT, "shell/auth.js"),
+    minify: true,
+    write: false,
+    sourcemap: false,
+  });
+  const authJs = authBundle.outputFiles[0];
+  if (!authJs) throw new Error("esbuild produced no output for src/preauth/auth.ts");
+  await writeFile(join(PUBLIC_OUT, "shell/auth.js"), authJs.text);
+
   async function walk(dir) {
     for (const entry of await readdir(join(PUBLIC_SRC, dir), { withFileTypes: true })) {
       const rel = join(dir, entry.name);
@@ -69,6 +88,9 @@ async function buildPublic() {
         await walk(rel);
         continue;
       }
+      // Built above instead — not a plain-JS file in public/ any more.
+      if (rel === join("shell", "auth.js")) continue;
+
       const src = join(PUBLIC_SRC, rel);
       const out = join(PUBLIC_OUT, rel);
       await mkdir(dirname(out), { recursive: true });
@@ -77,8 +99,8 @@ async function buildPublic() {
       if (COPY_AS_IS.has(ext)) {
         await copyFile(src, out);
       } else if (ext === ".js") {
-        // transform, not build: auth.js is a module and sw.js is a classic worker
-        // script, and neither should be rewrapped in another format.
+        // transform, not build: sw.js is a classic worker script with no imports of its
+        // own and shouldn't be rewrapped into another module format.
         const { code } = await transform(await readFile(src, "utf8"), { loader: "js", minify: true });
         await writeFile(out, code);
       } else if (ext === ".json") {

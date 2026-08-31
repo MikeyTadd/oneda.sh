@@ -28,7 +28,7 @@ src/app/crypto/        passkey PRF -> HKDF -> DEK envelope encryption (WebCrypto
 src/app/storage/       transparent-encryption IndexedDB wrapper
 src/app/sync/          offline sync queue over the DO WebSocket
 src/app/tiles/         tile interface + registry + the reference `notes` tile
-src/app/shell/         post-auth chrome: nav ordering, router, layout + stylesheet, sheets, bell/toast alerts (design doc §4.4)
+src/app/shell/         post-auth chrome: nav ordering + editor, settings, router, layout + stylesheet, sheets, bell/toast alerts (design doc §4.4)
 migrations/            D1 schema
 docs/DESIGN.md          full technical scope document
 ```

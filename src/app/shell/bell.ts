@@ -32,7 +32,7 @@ export function paintBell(): void {
     let dot = bell.querySelector<HTMLElement>(".dot-new");
     if (count > 0) {
       if (!dot) {
-        dot = el("span.dot-new");
+        dot = el<HTMLElement>("span.dot-new");
         bell.appendChild(dot);
       }
       bell.setAttribute("aria-label", `Alerts, ${count} unread`);
@@ -128,7 +128,7 @@ function openPanel(anchor: HTMLElement): void {
   openedFrom = anchor;
   const items = recent();
 
-  panel = el("div.alert-panel", { role: "dialog", "aria-label": "Alerts" }, [
+  panel = el<HTMLElement>("div.alert-panel", { role: "dialog", "aria-label": "Alerts" }, [
     el("div.alert-panel-head", {}, [
       el("span", { text: "Alerts" }),
       items.some((a) => !a.sticky)

@@ -87,7 +87,7 @@ let stack: HTMLElement | null = null;
 
 function host(): HTMLElement {
   if (!stack || !stack.isConnected) {
-    stack = el("div#alert-stack", { role: "status", "aria-live": "polite", "aria-relevant": "additions" });
+    stack = el<HTMLElement>("div#alert-stack", { role: "status", "aria-live": "polite", "aria-relevant": "additions" });
     document.body.appendChild(stack);
   }
   return stack;

@@ -419,27 +419,10 @@ button {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--sp4) 0 calc(var(--sp4) + env(safe-area-inset-bottom));
+  padding: var(--sp6) var(--gutter) calc(var(--sp4) + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-}
-
-.sheet-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp3);
-  min-height: 48px;
-  padding: 0 var(--gutter);
-  color: var(--text);
-}
-.sheet-row:hover {
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-}
-.sheet-row .ico {
-  width: 19px;
-  height: 19px;
-  color: var(--text-3);
-  flex: none;
+  gap: var(--sp4);
 }
 
 /* The foot every sheet with actions shares (./sheet.ts's sheetFoot()):
@@ -961,6 +944,336 @@ a.alert:hover {
   color: var(--text-3);
 }
 
+/* ── rows ──
+ * The list primitive: an icon, a name over a sub-line, and whatever
+ * trails. Used by the More sheet, the nav editor and every Settings
+ * block, so a row looks the same wherever it is. */
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 8px;
+  border-radius: var(--radius);
+  min-height: 44px;
+  color: var(--text);
+}
+.row + .row {
+  border-top: 1px solid var(--hairline);
+}
+a.row:hover,
+button.row:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+/* A row that is a button is still a row. <button> centres its text, so an
+ * identical row rendered as a button would read with its name and
+ * sub-line pushed into the middle while the anchor beside it sits hard
+ * left — the same component visibly disagreeing with itself. */
+button.row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+/* An unsized <svg> in a flex row does not collapse — it takes the
+ * replaced-element default and stretches to the row. The size lives here
+ * so the next icon put in a row is already right. */
+.row .ico {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  color: var(--text-3);
+}
+.row .who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.row .name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.row .sub {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row .chev {
+  flex: none;
+  color: var(--text-3);
+  font-size: 17px;
+  line-height: 1;
+}
+
+.empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ── the nav editor ──
+ * Reorder one step at a time rather than by dragging: a drag inside a
+ * scrolling sheet fights the scroll, has no keyboard equivalent and is
+ * invisible to a screen reader. The arrows are the accessible answer for
+ * free, and the list is short. */
+.nav-edit {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 8px;
+  border-radius: var(--radius);
+  min-height: 52px;
+}
+.nav-row + .nav-row {
+  border-top: 1px solid var(--hairline);
+}
+/* On the bar reads as the live half of the list, below the cut as the
+ * rest. A tint rather than a chip per row — the cut line already says
+ * which half you are in, and a chip on every row would say it again for
+ * each one. */
+.nav-row.on-bar {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-top-color: transparent;
+}
+.nav-row .slot {
+  width: 16px;
+  flex: none;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.nav-row.on-bar .slot {
+  color: var(--accent-ink);
+}
+.nav-row .ico {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--text-3);
+}
+.nav-row.on-bar .ico {
+  color: var(--text-2);
+}
+.nav-row .who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-row .name {
+  font-size: 14px;
+  font-weight: 500;
+}
+.nav-row .sub {
+  font-size: 11px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-move {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+/* A 40px target around a 14px arrow — the arrows are the whole
+ * interaction, so they are the last place to be stingy with a hit area. */
+.icon-btn {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-2);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--inactive);
+}
+.icon-btn:disabled {
+  color: var(--inactive);
+  cursor: default;
+}
+
+/* The cut, drawn between the rows rather than implied by counting them —
+ * which side of it a tile is on is the entire subject of this sheet. Both
+ * halves are named: a tint says "different", it does not say "this is
+ * your phone", and on a desktop the fold it describes is not visible
+ * anywhere on screen to be inferred from. */
+.nav-cut {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 14px 0 6px;
+}
+.nav-cut.first {
+  margin-top: 0;
+}
+.nav-cut.first .eyebrow {
+  color: var(--accent-ink);
+}
+.nav-cut .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+.nav-cut.first .rule {
+  background: color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
+.nav-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.nav-note b {
+  color: var(--text-2);
+  font-weight: 500;
+}
+/* Consecutive notes are one paragraph of small print, not three
+ * separate blocks — pulled back in against the scroll's column gap. */
+.nav-note + .nav-note {
+  margin-top: calc(-1 * var(--sp2));
+}
+
+/* ── settings ── */
+
+/* A settings screen is a column of prose and rows, so it takes a
+ * readable measure rather than the whole desktop width — a 1400px row
+ * with a name at one end and a chip at the other is unreadable. */
+#view-settings {
+  max-width: 760px;
+}
+
+.screen-title {
+  font-size: 27px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: var(--sp4) 0 0;
+}
+
+.eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp4);
+  margin: 0 0 var(--sp3);
+}
+
+.set-block {
+  display: block;
+  margin-top: var(--sp8);
+}
+
+/* One line of context under a section head, before its rows start. Sits
+ * inside the block so it reads as part of it rather than as a caption
+ * floating above the first row. */
+.block-note {
+  font-size: 11px;
+  color: var(--text-3);
+  margin: -2px 0 var(--sp2);
+  line-height: 1.5;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp4);
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+  min-height: 44px;
+}
+.toggle-row .t-text {
+  flex: 1;
+  min-width: 0;
+}
+.toggle-row .t-title {
+  font-size: 14px;
+}
+.toggle-row .t-desc {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+/* The switch, for a setting that is on or off. Nothing uses it yet — the
+ * one live preference is a choice of several values, not a binary — but
+ * it is the shape a boolean setting takes when the first one lands, and
+ * it is here so the next one does not invent a different toggle. */
+.switch {
+  width: 40px;
+  height: 23px;
+  border-radius: var(--radius-pill);
+  background: var(--inactive);
+  padding: 3px;
+  flex: none;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch i {
+  display: block;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+.switch[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.switch[aria-pressed="true"] i {
+  transform: translateX(17px);
+  background: var(--accent);
+}
+
+/* A setting that is a choice rather than a toggle. 16px like every other
+ * text control — a <select> under 16px zooms mobile Safari in on focus
+ * and never zooms back out. */
+.pref-select {
+  flex: none;
+  background: var(--surface-2);
+  border: 1px solid var(--inactive);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
 /* ── generic building blocks tiles can use ── */
 
 .card {
@@ -970,20 +1283,34 @@ a.alert:hover {
   padding: var(--sp4);
 }
 
+/* Buttons are outlined, never a solid accent fill. `.go` is the commit,
+ * `.ghost` the way out beside it — a sheet foot holds one of each. */
 .btn {
   appearance: none;
-  border: 1px solid var(--accent);
+  border: 0;
   background: transparent;
-  color: var(--accent-ink);
-  border-radius: var(--radius-pill);
-  padding: 9px 18px;
+  color: var(--text-2);
+  border-radius: var(--radius);
+  padding: 0 18px;
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  min-height: 44px;
+  min-height: 40px;
 }
-.btn:hover {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
+.btn.go {
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.btn.go:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.btn.ghost {
+  color: var(--text-3);
+}
+.btn.ghost:hover {
+  color: var(--text);
+  background: var(--inactive);
 }
 
 input,

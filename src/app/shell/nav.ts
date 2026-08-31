@@ -25,6 +25,9 @@ export interface NavDestination {
   id: string;
   label: string;
   icon: string;
+  /** One line of context, shown under the label in the More sheet and the
+   * nav editor — never in either nav itself, where there is no room. */
+  sub?: string;
   pinned?: boolean;
 }
 
@@ -42,13 +45,20 @@ export const SETTINGS: NavDestination = {
   id: "settings",
   label: "Settings",
   icon: "settings",
+  sub: "Tiles, alerts, your account",
   pinned: true,
 };
+
+/** How a tile's encryption tier reads as a sub-line (docs/DESIGN.md §1b) —
+ * the same fact the lock indicator draws, in words, for the two places
+ * that have room for a sentence. */
+const tierSub = (tile: TileManifest): string =>
+  tile.encryptionTier === "e2ee" ? "End-to-end encrypted" : "Client-side encrypted";
 
 /** Every destination the nav can hold this session: one entry per
  * installed tile, in registry order, plus Settings. */
 export function buildNav(tiles: TileManifest[]): NavDestination[] {
-  return [...tiles.map((t) => ({ id: t.id, label: t.name, icon: t.icon })), SETTINGS];
+  return [...tiles.map((t) => ({ id: t.id, label: t.name, icon: t.icon, sub: tierSub(t) })), SETTINGS];
 }
 
 export const navById = (nav: NavDestination[], id: string): NavDestination | null =>

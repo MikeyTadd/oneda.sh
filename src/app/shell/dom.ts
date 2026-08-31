@@ -15,11 +15,23 @@ export type ElChild = Node | string | null | undefined | false;
  * `el("a.sheet-row#foo", { href: "#/x", onClick: fn }, [iconNode, "Label"])`
  * — a class/id spec, an attrs bag (an `on*` key wires a listener; `text`/
  * `html` set content directly), and children appended in order.
+ *
+ * The tag is a runtime string, so the return type cannot be inferred from
+ * it. It defaults to `HTMLElement`; pass the specific interface when a
+ * caller needs the element's own API — `el<HTMLSelectElement>("select")`.
+ *
+ * `T` is deliberately unconstrained. `T extends HTMLElement` would be the
+ * natural bound, but @cloudflare/workers-types (global here, for the
+ * Worker half of the codebase) declares its own ambient `Element` for
+ * HTMLRewriter whose `remove(): Element` merges into lib.dom's — and
+ * `HTMLSelectElement.remove()` returns `void`, so under this tsconfig
+ * HTMLSelectElement does not satisfy `extends HTMLElement`. Hence the
+ * built-as-HTMLElement, cast-at-the-return shape below.
  */
-export function el(spec: string, attrs: ElAttrs = {}, children: ElChild[] = []): HTMLElement {
+export function el<T = HTMLElement>(spec: string, attrs: ElAttrs = {}, children: ElChild[] = []): T {
   const parts = spec.split(/(?=[.#])/);
   const tag = parts[0] || "div";
-  const node = document.createElement(tag);
+  const node: HTMLElement = document.createElement(tag);
   for (let i = 1; i < parts.length; i++) {
     const token = parts[i] ?? "";
     if (token[0] === ".") node.classList.add(token.slice(1));
@@ -29,7 +41,18 @@ export function el(spec: string, attrs: ElAttrs = {}, children: ElChild[] = []):
   for (const [key, value] of Object.entries(attrs)) {
     if (value === undefined || value === null) continue;
     if (value === false && !key.startsWith("aria-")) continue;
-    if (key === "text") node.textContent = String(value);
+    // `class` ADDS to whatever the spec string already gave the node —
+    // never replaces it. A bare setAttribute("class", …) silently drops
+    // the classes in the spec, which is how `el("div.nav-row", {class:
+    // "on-bar"})` became a node with only `on-bar`: `.nav-row .ico` then
+    // matched nothing, the icon inside it lost its width/height rule, and
+    // an unsized <svg> in a flex row does not collapse — it takes the
+    // replaced-element default and stretches to fill the row.
+    if (key === "class") {
+      for (const name of String(value).split(/\s+/)) {
+        if (name) node.classList.add(name);
+      }
+    } else if (key === "text") node.textContent = String(value);
     else if (key === "html") node.innerHTML = String(value);
     else if (key.startsWith("on") && typeof value === "function") {
       node.addEventListener(key.slice(2).toLowerCase(), value);
@@ -44,7 +67,7 @@ export function el(spec: string, attrs: ElAttrs = {}, children: ElChild[] = []):
     if (child === null || child === undefined || child === false) continue;
     node.appendChild(typeof child === "string" ? document.createTextNode(child) : child);
   }
-  return node;
+  return node as T;
 }
 
 export function appendChildren(parent: HTMLElement, ...children: HTMLElement[]): void {

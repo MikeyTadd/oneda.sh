@@ -13,12 +13,17 @@ import type { EncryptedStorage } from "../storage/db.js";
 import type { SyncQueue } from "../sync/queue.js";
 import { loadRegistry, loadTile, mountInstalledTiles } from "../tiles/registry.js";
 import type { TileManifest } from "../tiles/types.js";
-import { connectAlerts } from "./alerts.js";
+import { configureAlerts, connectAlerts } from "./alerts.js";
 import { watchAlerts } from "./bell.js";
 import { appendChildren, el, forEachEl } from "./dom.js";
 import { ICONS, iconSvg, MARK_SVG } from "./icons.js";
-import { buildNav, defaultRoute, loadNavOrder, navById, order, split, SETTINGS, type NavDestination } from "./nav.js";
-import { openSheet } from "./sheet.js";
+import { openMoreSheet, type NavEditDeps } from "./nav-edit.js";
+import { buildNav, defaultRoute, loadNavOrder, navById, order, saveNavOrder, split, type NavDestination } from "./nav.js";
+import { loadPrefs, prefs } from "./prefs.js";
+import { renderSettings } from "./settings.js";
+
+/** The app's name, in the one place the shell prints it. */
+const APP_NAME = "oneda";
 
 export interface ShellDeps {
   storage: EncryptedStorage;
@@ -48,7 +53,10 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
 
   const nav = buildNav(manifests);
   const saved = await loadNavOrder(deps.storage);
-  const orderedIds = order(saved, manifests);
+  // The one mutable copy of the order. The editor writes through
+  // `navEdit.setOrder` below rather than to its own copy, so the navs, the
+  // router's fallback and the Settings screen can never drift apart.
+  let orderedIds = order(saved, manifests);
 
   buildChrome(root, orderedIds);
 
@@ -59,15 +67,36 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   // shell's concern, so the view-toggling class is added here.
   forEachEl(container.querySelectorAll<HTMLElement>("[data-tile-id]"), (section) => section.classList.add("view"));
 
+  const navEdit: NavEditDeps = {
+    nav,
+    manifests,
+    getOrder: () => orderedIds,
+    setOrder: (ids) => {
+      orderedIds = ids;
+      void saveNavOrder(deps.storage, ids);
+      paintNav(nav, orderedIds);
+      markCurrentTab(currentRoute);
+      // Both navs have just been rebuilt, so anything painted from the
+      // order repaints too — Settings' navigation block listens for this.
+      window.dispatchEvent(new CustomEvent("nav-changed"));
+    },
+  };
+
   const settingsView = el("section.view#view-settings", { "data-tile-id": "settings" });
-  appendChildren(settingsView, renderSettingsPlaceholder());
   container.appendChild(settingsView);
+  renderSettings(settingsView, { ...navEdit, appName: APP_NAME });
 
   paintNav(nav, orderedIds);
-  wireRouter(nav, orderedIds);
+  wireRouter(nav, () => orderedIds);
   wireLayoutSwitch();
-  wireMoreSheet(nav, orderedIds);
+  wireMoreSheet(navEdit);
 
+  await loadPrefs(deps.storage);
+  configureAlerts({ dwellMs: prefs.alertDwellMs });
+  window.addEventListener("prefs-changed", (event) => {
+    const key = (event as CustomEvent<{ key?: string }>).detail?.key;
+    if (!key || key === "alertDwellMs") configureAlerts({ dwellMs: prefs.alertDwellMs });
+  });
   await connectAlerts(deps.storage);
   watchAlerts();
 
@@ -172,14 +201,33 @@ function paintNav(nav: NavDestination[], orderedIds: string[]): void {
   tabbar.appendChild(moreTab);
 }
 
-function markCurrentTab(route: string): void {
+/** Which nav entry is lit. Split out of navigate() because a reorder has
+ * to re-mark without navigating — the route has not changed, but the
+ * elements carrying the mark have all just been replaced. A route the
+ * phone's bar cannot show lights More instead, so the bar is never left
+ * claiming you are nowhere. */
+function markCurrentTab(route: string | null): void {
+  if (!route) return;
+  let onBar = false;
   forEachEl(document.querySelectorAll<HTMLElement>("[data-tab]"), (link) => {
-    if (link.dataset.tab === route) link.setAttribute("aria-current", "page");
-    else link.removeAttribute("aria-current");
+    if (link.dataset.tab === route) {
+      link.setAttribute("aria-current", "page");
+      if (link.classList.contains("tab")) onBar = true;
+    } else {
+      link.removeAttribute("aria-current");
+    }
   });
+  const more = document.querySelector<HTMLElement>(".tab-more");
+  if (more) {
+    if (onBar) more.removeAttribute("aria-current");
+    else more.setAttribute("aria-current", "page");
+  }
 }
 
+let currentRoute: string | null = null;
+
 function navigate(route: string): void {
+  currentRoute = route;
   forEachEl(document.querySelectorAll<HTMLElement>("#views .view"), (section) => {
     section.classList.toggle("active", section.dataset.tileId === route);
   });
@@ -191,9 +239,12 @@ function navigate(route: string): void {
   if (location.hash !== `#/${route}`) location.hash = `#/${route}`;
 }
 
-function wireRouter(nav: NavDestination[], orderedIds: string[]): void {
+/** `getOrder` rather than a snapshot: the fallback route is the first
+ * entry in the *current* order, so a reorder moves the front door with it
+ * instead of stranding the router on the order that existed at boot. */
+function wireRouter(nav: NavDestination[], getOrder: () => string[]): void {
   window.addEventListener("hashchange", () => {
-    const route = location.hash.replace(/^#\/?/, "") || defaultRoute(orderedIds);
+    const route = location.hash.replace(/^#\/?/, "") || defaultRoute(getOrder());
     if (navById(nav, route)) navigate(route);
   });
 }
@@ -210,60 +261,16 @@ function wireLayoutSwitch(): void {
   onChange();
 }
 
-function wireMoreSheet(nav: NavDestination[], orderedIds: string[]): void {
-  document.getElementById("rail-customise")?.addEventListener("click", () => openMoreSheet(nav, orderedIds));
+/** The rail's "Customise navigation" button goes straight to the editor —
+ * a desktop rail shows every destination, so it has no overflow list to
+ * offer. The phone's More tab opens the overflow sheet, with the editor
+ * one row further down it. Both live in ./nav-edit.ts. */
+function wireMoreSheet(navEdit: NavEditDeps): void {
+  document.getElementById("rail-customise")?.addEventListener("click", () => {
+    openMoreSheet(navEdit, { straightToEditor: true });
+  });
   document.getElementById("tabbar")?.addEventListener("click", (e) => {
     const target = (e.target as HTMLElement).closest(".tab-more");
-    if (target) openMoreSheet(nav, orderedIds);
+    if (target) openMoreSheet(navEdit);
   });
-}
-
-/** The phone's only route to a destination pushed off the bar, and to
- * Settings and the (future) order editor. Built on the shared sheet
- * (./sheet.ts) — one live popup at a time, Escape/backdrop/focus-trap for
- * free from the native `<dialog>`. */
-function openMoreSheet(nav: NavDestination[], orderedIds: string[]): void {
-  const dialog = openSheet("more-sheet", { label: "More" });
-  const inner = el("div.sheet-inner");
-  const head = el("div.sheet-head");
-  appendChildren(head, el("span.grab", { "aria-hidden": "true" }));
-  const who = el("div.sheet-who");
-  appendChildren(who, el("div.sheet-name", {}, [el("div.line", {}, [el("span.t", { text: "More" })])]));
-  appendChildren(who, el("button.sheet-x", { type: "button", "aria-label": "Close", text: "✕", onClick: () => dialog.close() }));
-  appendChildren(head, who);
-
-  const scroll = el("div.sheet-scroll");
-  const { more } = split(orderedIds);
-  for (const id of more) {
-    const dest = navById(nav, id);
-    if (!dest) continue;
-    const row = el("a.sheet-row", { href: `#/${dest.id}`, onClick: () => dialog.close() });
-    row.innerHTML = iconSvg(ICONS[dest.icon] ?? ICONS.tile ?? "", "ico");
-    appendChildren(row, el("span", { text: dest.label }));
-    scroll.appendChild(row);
-  }
-  // Settings is pinned — never in `orderedIds` — so it is a hand-written
-  // row here, under the same "This app" framing the desktop rail's foot
-  // uses, not sorted in among the tile rows above it.
-  const settingsRow = el("a.sheet-row", { href: "#/settings", onClick: () => dialog.close() });
-  settingsRow.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
-  appendChildren(settingsRow, el("span", { text: SETTINGS.label }));
-  scroll.appendChild(settingsRow);
-
-  appendChildren(inner, head, scroll);
-  dialog.appendChild(inner);
-}
-
-/** Settings is pinned nav (nav.ts), not a tile, so it has no registry
- * module of its own — the shell renders its (currently minimal) view
- * directly. Device list / passkey management / the nav order editor
- * (docs/DESIGN.md §9b) attach here as that backend work lands; kept a
- * placeholder rather than a stub screen, since the surrounding chrome is
- * this change's scope. */
-function renderSettingsPlaceholder(): HTMLElement {
-  const card = el("div.card");
-  const p = document.createElement("p");
-  p.textContent = "Devices, passkeys and integrations land here as each is built (docs/DESIGN.md §9b, §9d).";
-  appendChildren(card, el("h2", { text: "Settings" }), p);
-  return card;
 }

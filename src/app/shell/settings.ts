@@ -295,7 +295,10 @@ function maintenanceBlock(): HTMLElement {
     onClick: () => confirmReset(),
   });
 
-  return el("section.set-block", {}, [blockHead("Maintenance"), check, reset, status]);
+  // F1 Apex's own maintenanceBlock (views/settings.js): the buttons sit inside a
+  // dedicated .maint wrapper, not as bare siblings — that wrapper is the only thing
+  // that puts a gap between them, so leaving it out is what had them touching.
+  return el("section.set-block", {}, [blockHead("Maintenance"), el("div.maint", {}, [check, reset, status])]);
 }
 
 /**

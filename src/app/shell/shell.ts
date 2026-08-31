@@ -1,26 +1,24 @@
 // Post-auth shell chrome: builds the desktop rail / phone tab bar from the
 // tile registry's saved order, mounts every installed tile into its own
-// view, and switches which markup is live at the 900px breakpoint.
+// view, wires the bell + toast system, and switches which markup is live
+// at the 900px breakpoint.
 //
 // Structure is adapted from a sibling project's PWA shell (F1 Apex) — one
 // saved order painting two navs, Settings pinned outside that order and
-// hand-placed in fixed chrome — written fresh here against oneda's tile
-// model rather than copied from that project.
-//
-// Uses appendChild()/forEach() rather than Element.append() or a for-of
-// over a NodeList: this project's tsconfig pulls in @cloudflare/workers-
-// types globally (needed for the Worker half of the codebase), and that
-// package's HTMLRewriter typings declare their own ambient `Element`,
-// which merges into and shadows lib.dom's `Element.append()` signature.
-// The existing client code (../tiles/notes/index.ts) already works around
-// this the same way.
+// hand-placed in fixed chrome, a shared sheet/dialog for every popup, a
+// bell fed by a generic alert queue — written fresh here against oneda's
+// tile model rather than copied from that project.
 
 import type { EncryptedStorage } from "../storage/db.js";
 import type { SyncQueue } from "../sync/queue.js";
 import { loadRegistry, loadTile, mountInstalledTiles } from "../tiles/registry.js";
 import type { TileManifest } from "../tiles/types.js";
-import { buildNav, defaultRoute, loadNavOrder, navById, order, split, SETTINGS, type NavDestination } from "./nav.js";
+import { connectAlerts } from "./alerts.js";
+import { watchAlerts } from "./bell.js";
+import { appendChildren, el, forEachEl } from "./dom.js";
 import { ICONS, iconSvg, MARK_SVG } from "./icons.js";
+import { buildNav, defaultRoute, loadNavOrder, navById, order, split, SETTINGS, type NavDestination } from "./nav.js";
+import { openSheet } from "./sheet.js";
 
 export interface ShellDeps {
   storage: EncryptedStorage;
@@ -28,8 +26,8 @@ export interface ShellDeps {
 }
 
 /** Builds the shell chrome into `root` (normally `document.body`), mounts
- * every installed tile, and wires up routing. Call once after the DEK is
- * available (never before the app-level unlock). */
+ * every installed tile, and wires up routing, the bell and toasts. Call
+ * once after the DEK is available (never before the app-level unlock). */
 export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<void> {
   const registryEntries = await loadRegistry({ storage: deps.storage, syncQueue: deps.syncQueue, dataNamespace: "shell" });
   const tileIds = [...registryEntries].sort((a, b) => a.order - b.order).map((e) => e.tileId);
@@ -68,7 +66,10 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   paintNav(nav, orderedIds);
   wireRouter(nav, orderedIds);
   wireLayoutSwitch();
-  wireMoreSheet(nav, orderedIds, deps.storage);
+  wireMoreSheet(nav, orderedIds);
+
+  await connectAlerts(deps.storage);
+  watchAlerts();
 
   navigate(location.hash.replace(/^#\/?/, "") || defaultRoute(orderedIds));
 }
@@ -96,22 +97,29 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
 
   const main = el("div#shell-main");
 
+  // Phone app bar: brand mark, title, the bell beside the Settings gear —
+  // never instead of it, since the gear is the one route to Settings that
+  // holds however the nav order is arranged (nav.ts).
   const appbarWrap = el("div.bar-wrap#appbar-wrap");
   const appbar = el("header#appbar");
   const brand = el("a.brand", { href: "#/" + defaultRoute(orderedIds), "aria-label": "Home" });
   brand.innerHTML = MARK_SVG;
   const who = el("div.bar-who");
   appendChildren(who, el("span.title#appbar-title", { text: "" }));
-  const bell = el("a", { href: "#/settings", "aria-label": "Settings" });
-  bell.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
-  appendChildren(appbar, brand, who, bell);
+  const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
+  const gear = el("a", { href: "#/settings", "aria-label": "Settings" });
+  gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
+  appendChildren(appbar, brand, who, appbarBell, gear);
   appendChildren(appbarWrap, appbar);
 
+  // Desktop top bar: no gear here (Settings is a rail destination), so the
+  // bell has the corner to itself.
   const topbarWrap = el("div.bar-wrap#topbar-wrap");
   const topbar = el("div#topbar");
   const topWho = el("div.bar-who");
   appendChildren(topWho, el("span.title#topbar-title", { text: "" }));
-  appendChildren(topbar, topWho);
+  const topbarBell = el("button.bar-bell#topbar-bell", { type: "button", "aria-label": "Alerts" });
+  appendChildren(topbar, topWho, topbarBell);
   appendChildren(topbarWrap, topbar);
 
   const views = el("main#views");
@@ -127,7 +135,7 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
 /** Paints both navs from the saved order — the rail lists every
  * destination, the bar shows the first BAR_SLOTS and hands the rest to
  * More. Settings is never painted from here: it lives in the rail's foot
- * and, on a phone, the More sheet's own fixed row (wireMoreSheet). */
+ * and, on a phone, the More sheet's own fixed row (openMoreSheet). */
 function paintNav(nav: NavDestination[], orderedIds: string[]): void {
   const rail = document.getElementById("rail-nav")!;
   rail.innerHTML = "";
@@ -202,54 +210,48 @@ function wireLayoutSwitch(): void {
   onChange();
 }
 
-function wireMoreSheet(nav: NavDestination[], orderedIds: string[], storage: EncryptedStorage): void {
-  document.getElementById("rail-customise")?.addEventListener("click", () => openMoreSheet(nav, orderedIds, storage));
+function wireMoreSheet(nav: NavDestination[], orderedIds: string[]): void {
+  document.getElementById("rail-customise")?.addEventListener("click", () => openMoreSheet(nav, orderedIds));
   document.getElementById("tabbar")?.addEventListener("click", (e) => {
     const target = (e.target as HTMLElement).closest(".tab-more");
-    if (target) openMoreSheet(nav, orderedIds, storage);
+    if (target) openMoreSheet(nav, orderedIds);
   });
 }
 
-function openMoreSheet(nav: NavDestination[], orderedIds: string[], storage: EncryptedStorage): void {
-  document.getElementById("more-sheet")?.remove();
-
-  const dialog = el("dialog.sheet#more-sheet") as HTMLDialogElement;
+/** The phone's only route to a destination pushed off the bar, and to
+ * Settings and the (future) order editor. Built on the shared sheet
+ * (./sheet.ts) — one live popup at a time, Escape/backdrop/focus-trap for
+ * free from the native `<dialog>`. */
+function openMoreSheet(nav: NavDestination[], orderedIds: string[]): void {
+  const dialog = openSheet("more-sheet", { label: "More" });
   const inner = el("div.sheet-inner");
   const head = el("div.sheet-head");
-  const close = el("button.sheet-close", { type: "button", "aria-label": "Close" });
-  close.textContent = "✕";
-  close.addEventListener("click", () => dialog.close());
-  appendChildren(head, el("h2", { text: "More" }), close);
+  appendChildren(head, el("span.grab", { "aria-hidden": "true" }));
+  const who = el("div.sheet-who");
+  appendChildren(who, el("div.sheet-name", {}, [el("div.line", {}, [el("span.t", { text: "More" })])]));
+  appendChildren(who, el("button.sheet-x", { type: "button", "aria-label": "Close", text: "✕", onClick: () => dialog.close() }));
+  appendChildren(head, who);
 
   const scroll = el("div.sheet-scroll");
   const { more } = split(orderedIds);
   for (const id of more) {
     const dest = navById(nav, id);
     if (!dest) continue;
-    const row = el("a.sheet-row", { href: `#/${dest.id}` });
+    const row = el("a.sheet-row", { href: `#/${dest.id}`, onClick: () => dialog.close() });
     row.innerHTML = iconSvg(ICONS[dest.icon] ?? ICONS.tile ?? "", "ico");
     appendChildren(row, el("span", { text: dest.label }));
-    row.addEventListener("click", () => dialog.close());
     scroll.appendChild(row);
   }
   // Settings is pinned — never in `orderedIds` — so it is a hand-written
   // row here, under the same "This app" framing the desktop rail's foot
   // uses, not sorted in among the tile rows above it.
-  const settingsRow = el("a.sheet-row", { href: "#/settings" });
+  const settingsRow = el("a.sheet-row", { href: "#/settings", onClick: () => dialog.close() });
   settingsRow.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
   appendChildren(settingsRow, el("span", { text: SETTINGS.label }));
-  settingsRow.addEventListener("click", () => dialog.close());
   scroll.appendChild(settingsRow);
 
   appendChildren(inner, head, scroll);
   dialog.appendChild(inner);
-  document.body.appendChild(dialog);
-  dialog.addEventListener("close", () => dialog.remove());
-  dialog.addEventListener("click", (e) => {
-    if (e.target === dialog) dialog.close();
-  });
-  dialog.showModal();
-  void storage; // order editing (drag-to-reorder + saveNavOrder, nav.ts) is the next slice of this sheet
 }
 
 /** Settings is pinned nav (nav.ts), not a tile, so it has no registry
@@ -264,33 +266,4 @@ function renderSettingsPlaceholder(): HTMLElement {
   p.textContent = "Devices, passkeys and integrations land here as each is built (docs/DESIGN.md §9b, §9d).";
   appendChildren(card, el("h2", { text: "Settings" }), p);
   return card;
-}
-
-function appendChildren(parent: HTMLElement, ...children: HTMLElement[]): void {
-  for (const child of children) parent.appendChild(child);
-}
-
-function forEachEl<T extends Element>(list: NodeListOf<T>, fn: (item: T) => void): void {
-  for (let i = 0; i < list.length; i++) {
-    const item = list.item(i);
-    if (item) fn(item);
-  }
-}
-
-function el(spec: string, attrs: Record<string, string | boolean> = {}): HTMLElement {
-  const parts = spec.split(/(?=[.#])/);
-  const tag = parts[0] || "div";
-  const node = document.createElement(tag);
-  for (let i = 1; i < parts.length; i++) {
-    const token = parts[i] ?? "";
-    if (token[0] === ".") node.classList.add(token.slice(1));
-    else if (token[0] === "#") node.id = token.slice(1);
-  }
-  for (const [key, value] of Object.entries(attrs)) {
-    if (key === "text") node.textContent = String(value);
-    else if (typeof value === "boolean") {
-      if (value) node.setAttribute(key, "");
-    } else node.setAttribute(key, value);
-  }
-  return node;
 }

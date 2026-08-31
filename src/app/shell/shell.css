@@ -301,58 +301,156 @@ button {
   cursor: pointer;
 }
 
-/* ── "More" sheet — the phone's only route to a destination pushed off the
- * bar, and to the nav order editor. A native <dialog> so the platform
- * handles focus, backdrop dimming and inertness behind it for free. */
-dialog.sheet {
+/* ── sheets ──
+ * The dialog every popup in the shell is built from (./sheet.ts's
+ * openSheet()) — a bottom sheet on a phone, a centred card on desktop, a
+ * native <dialog> in both. Escape, the focus trap and the backdrop are the
+ * platform's job. `.more-sheet` (nav overflow) is the first caller; a
+ * future alert history / order editor / any tile's own popup use the same
+ * base classes rather than inventing another dialog treatment. */
+.sheet {
   border: 0;
   padding: 0;
   margin: auto auto 0;
   width: 100%;
-  max-width: 560px;
+  max-width: 100%;
   max-height: 88dvh;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
+  background: transparent;
   color: var(--text);
+  overflow: visible;
 }
-dialog.sheet::backdrop {
-  background: rgba(0, 0, 0, 0.55);
+/* showModal() focuses the <dialog> element itself — the full-bleed
+ * transparent box, not the visible card inside it — so the global focus
+ * ring must not draw around it. Everything focusable within keeps its own
+ * ring via :focus-visible below. */
+.sheet:focus,
+.sheet:focus-visible {
+  outline: none;
 }
+.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
 .sheet-inner {
-  overflow: hidden;
-  max-height: 88dvh;
   display: flex;
   flex-direction: column;
+  max-height: 88dvh;
+  background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow:
+    0 0 0 1px var(--inactive),
+    0 -12px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
 }
-.sheet-scroll {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: var(--sp4) var(--gutter) calc(var(--sp6) + env(safe-area-inset-bottom));
-}
+
+/* The head does not scroll — it's the answer to "what sheet is this",
+ * and has to hold while the content under it moves. */
 .sheet-head {
+  flex: none;
+  padding: 10px var(--gutter) var(--sp3);
+  border-bottom: 1px solid var(--hairline);
+}
+.sheet-head .grab {
+  display: block;
+  width: 36px;
+  height: 4px;
+  margin: 0 auto 11px;
+  border-radius: 2px;
+  background: var(--inactive);
+}
+.sheet-who {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: var(--sp4) var(--gutter) var(--sp2);
+  gap: var(--sp3);
+  min-width: 0;
 }
-.sheet-head h2 {
+.sheet-who > .sheet-x {
+  margin: -11px -11px 0 2px;
+  align-self: flex-start;
+}
+.sheet-name {
+  flex: 1;
+  min-width: 0;
+}
+.sheet-name .line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp2);
+  min-width: 0;
+}
+.sheet-name .t {
   font-size: 16px;
   font-weight: 500;
-  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.sheet-close {
-  appearance: none;
-  border: 0;
-  background: var(--surface-2);
-  color: var(--text-2);
-  border-radius: var(--radius-pill);
-  width: 32px;
-  height: 32px;
+.sheet-name .s {
+  display: block;
+  font-size: 11.5px;
+  color: var(--text-3);
+  margin-top: 1px;
+}
+/* Close is a 44px target (never smaller — the one control you reach for
+ * when you want out) with a 17px glyph centred in it. */
+.sheet-x {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--text-3);
+  background: none;
+  border: 0;
   cursor: pointer;
+}
+.sheet-x:hover {
+  background: var(--inactive);
+  color: var(--text);
+}
+
+.sheet-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp4) 0 calc(var(--sp4) + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp3);
+  min-height: 48px;
+  padding: 0 var(--gutter);
+  color: var(--text);
+}
+.sheet-row:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.sheet-row .ico {
+  width: 19px;
+  height: 19px;
+  color: var(--text-3);
+  flex: none;
+}
+
+/* The foot every sheet with actions shares (./sheet.ts's sheetFoot()):
+ * buttons in a row, right-aligned, above the safe area. */
+.sheet-foot {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp3);
+  padding: var(--sp3) var(--gutter) calc(var(--sp3) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--hairline);
 }
 
 /* A dialog does not stop the page behind it scrolling on its own — locking
@@ -366,19 +464,21 @@ html {
   scrollbar-gutter: stable;
 }
 
-.sheet-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp3);
-  min-height: 48px;
-  padding: 0 var(--gutter);
-  color: var(--text);
-}
-.sheet-row .ico {
-  width: 19px;
-  height: 19px;
-  color: var(--text-3);
-  flex: none;
+@media (min-width: 900px) {
+  .sheet {
+    max-width: 560px;
+    margin: auto;
+  }
+  .sheet-inner {
+    max-height: 84dvh;
+    border-radius: var(--radius-lg);
+  }
+  .sheet-head {
+    padding-top: var(--sp4);
+  }
+  .sheet-head .grab {
+    display: none;
+  }
 }
 
 /* ── desktop (≥900px) ── */
@@ -539,6 +639,326 @@ html {
     border-top: 0;
     border-left: 1px solid var(--hairline);
   }
+}
+
+/* ── toasts and the bell ──
+ * A thing happened while you were looking at something else (./alerts.ts,
+ * ./bell.ts). Any tile can raise one; every one renders through this one
+ * set of classes rather than each tile inventing its own popup. Adapted
+ * from a sibling project's toast/bell CSS (F1 Apex), against oneda's own
+ * tokens and layout. */
+
+#alert-stack {
+  position: fixed;
+  z-index: 60;
+  bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px);
+  right: 12px;
+  left: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp2);
+  /* The stack spans a strip of the screen the whole time; it must never
+   * eat a tap meant for the screen underneath — only a toast card does. */
+  pointer-events: none;
+}
+
+@media (min-width: 900px) {
+  #alert-stack {
+    top: calc(var(--sp4) + 60px);
+    bottom: auto;
+    left: auto;
+    width: min(340px, calc(100vw - 24px));
+  }
+}
+
+.alert {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp3);
+  padding: 10px 8px 10px 14px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md);
+  text-decoration: none;
+  color: inherit;
+}
+a.alert:hover {
+  box-shadow:
+    0 0 0 1px var(--inactive),
+    0 6px 18px rgba(0, 0, 0, 0.55);
+}
+
+.alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.alert-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+/* Two lines, then ellipsis — a toast is a nudge, not the full message. */
+.alert-detail {
+  font-size: 12px;
+  color: var(--text-2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.alert-more {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+/* Something to do, not somewhere to go. */
+.alert-action {
+  align-self: flex-start;
+  margin-top: 7px;
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--accent-ink);
+}
+.alert-action:hover {
+  color: var(--accent);
+}
+.alert-x {
+  flex: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 17px;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  border-radius: var(--radius);
+}
+.alert-x:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .alert {
+    animation: alert-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .alert-out {
+    animation: alert-out 160ms ease-in both;
+  }
+  /* Enters from the edge it lives on: up from the bottom on a phone, down
+   * from the bar on a desktop — a card sliding the wrong way reads as
+   * leaving, not arriving. */
+  @keyframes alert-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @keyframes alert-out {
+    to {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @media (min-width: 900px) {
+    @keyframes alert-in {
+      from {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+    }
+    @keyframes alert-out {
+      to {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+    }
+  }
+}
+
+/* ── the bell ──
+ * Sits beside the gear on the phone app bar (never instead of it — the
+ * gear is the one route to Settings that survives however the nav order
+ * is arranged, nav.ts) and alone on the desktop top bar, which carries no
+ * gear of its own. */
+.bar-bell {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -11px -6px -11px 0;
+}
+.bar-bell:hover {
+  color: var(--text-2);
+}
+.bar-bell .ico {
+  width: 19px;
+  height: 19px;
+}
+
+.dot-new {
+  position: absolute;
+  top: 10px;
+  right: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* Anchored by rectangle from ./bell.ts, not inserted next to the bell — as
+ * a child of the bar it would inherit the bar's stacking context (z-index
+ * 40) and paint underneath the toast stack (60). */
+.alert-panel {
+  position: fixed;
+  z-index: 70;
+  width: auto;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+@media (min-width: 900px) {
+  .alert-panel {
+    width: min(320px, calc(100vw - 24px));
+  }
+}
+
+.alert-panel-head {
+  display: flex;
+  align-items: center;
+  padding: 10px 8px 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.alert-panel-head > span:first-child {
+  flex: 1;
+}
+.alert-panel-x {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 17px;
+  line-height: 1;
+  width: 44px;
+  height: 44px;
+}
+.alert-panel-x:hover {
+  color: var(--text);
+  background: var(--inactive);
+}
+.alert-panel-list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+.alert-past {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp2);
+  padding: 9px 6px 9px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.alert-past:last-child {
+  border-bottom: 0;
+}
+.alert-past:hover {
+  background: var(--inactive);
+}
+.alert-past-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+}
+.alert-past-x {
+  flex: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 15px;
+  line-height: 1;
+  min-width: 30px;
+  min-height: 30px;
+  border-radius: var(--radius);
+}
+.alert-past-x:hover {
+  color: var(--text);
+}
+.alert-panel-clear {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+.alert-panel-clear:hover {
+  color: var(--accent);
+}
+.alert-when {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.alert-panel-empty {
+  margin: 0;
+  padding: 18px 14px;
+  font-size: 12px;
+  color: var(--text-3);
 }
 
 /* ── generic building blocks tiles can use ── */

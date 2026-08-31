@@ -11637,7 +11637,7 @@ button.row.as-button {
  * doesn't mean anything once the desktop rule below shows both side by side regardless of
  * it. Without this guard, hiding one pane via display: none also removes it from the grid
  * entirely, and the surviving pane — now the *only* grid item — collapses into whichever
- * track auto-placement gives a lone item (the narrow first one, 260px), not the width it
+ * track auto-placement gives a lone item (the narrow first one, --side-w), not the width it
  * actually has when both panes are present. */
 @media (max-width: 899px) {
   .split[data-view="list"] .notes-main {
@@ -11666,16 +11666,13 @@ button.row.as-button {
   grid-template-columns: minmax(0, 1fr);
 }
 @media (min-width: 900px) {
-  /* Narrower than --side-w (380px, Settings' own side column): that width earns its keep
-     holding paragraph text (About's blurb, a device's cached-data note); a folder tree and a
-     list of note titles is short names, one per line, and 380px of them read as mostly empty
-     margin next to a name. Narrow-then-wide, not Settings' wide-then-narrow — `order: -1`
-     above moves .notes-sidebar into the first track, so the first column has to be the
-     narrow one for it to land in the right place. `.side`'s own 22px padding and hairline
-     border are left completely alone here — only which edge the hairline sits on flips,
-     since the narrow column is now first instead of last. */
+  /* Same --side-w Settings uses (380px) — same template, same proportions, every app. Only
+     the order flips: `order: -1` above moves .notes-sidebar into the first track, so the
+     first column has to be the narrow one for it to land in the right place. `.side`'s own
+     22px padding and hairline border are left completely alone here — only which edge the
+     hairline sits on flips, since the narrow column is now first instead of last. */
   .split:has(> .notes-sidebar) {
-    grid-template-columns: 260px minmax(0, 1fr);
+    grid-template-columns: var(--side-w) minmax(0, 1fr);
   }
   .notes-sidebar {
     border-left: 0;

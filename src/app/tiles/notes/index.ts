@@ -370,6 +370,10 @@ async function flushPendingSave(): Promise<void> {
   const updated = await saveNote(ctx, currentNote, currentNoteDoc, title, body);
   currentNote = updated;
   state.notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
+  // The sidebar shows every note's title — an autosave used to only reach it once the note
+  // was closed or moved, so a freshly-typed title sat there reading "Untitled" until you
+  // navigated away, which read as the rename having silently failed.
+  paintSidebar();
 }
 
 export default notesTile;

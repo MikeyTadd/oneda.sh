@@ -185,14 +185,33 @@ function libraryRow(library: LibraryMeta): HTMLElement {
   const openBtn = el("button.notes-row-main", { type: "button", onClick: () => selectLibrary(library.id) });
   appendChildren(openBtn, el("div.name", { text: displayName(library) }));
 
-  const renameBtn = el("button.chip.act", { type: "button", text: "Rename", onClick: () => openRenameLibrarySheet(library) });
-  const deleteBtn = el("button.chip.act", { type: "button", text: "Delete", onClick: () => void removeLibrary(library) });
+  const actions: HTMLElement[] = [];
+  // A revealed hidden library needs some way back to hidden that doesn't depend on
+  // remembering the shortcut+passphrase — showing this button is not a new discovery
+  // surface, since it only ever appears on a library that's already sitting revealed in
+  // front of you. Locking itself needs no passphrase (only revealing does): you're already
+  // looking at it, so there's nothing left to prove.
+  if (library.hidden && revealed.has(library.id)) {
+    actions.push(el("button.chip.act", { type: "button", text: "Lock", onClick: () => lockLibrary(library) }));
+  }
+  actions.push(el("button.chip.act", { type: "button", text: "Rename", onClick: () => openRenameLibrarySheet(library) }));
+  actions.push(el("button.chip.act", { type: "button", text: "Delete", onClick: () => void removeLibrary(library) }));
 
   return el("div.row", { "data-current": library.id === currentLibraryId ? "true" : undefined }, [
     icon(library.hidden ? "lock" : "folder"),
     el("div.who", {}, [openBtn]),
-    el("div.device-actions", {}, [renameBtn, deleteBtn]),
+    el("div.device-actions", {}, actions),
   ]);
+}
+
+function lockLibrary(library: LibraryMeta): void {
+  revealed.delete(library.id);
+  if (currentLibraryId === library.id) {
+    currentLibraryId = null;
+    shellEl?.setAttribute("data-view", "list");
+  }
+  paintSidebar();
+  paintMain();
 }
 
 function selectLibrary(id: string): void {
@@ -340,7 +359,15 @@ function paintMain(): void {
   const backBtn = el("button.notes-back", { type: "button", "aria-label": "Back to libraries", onClick: () => backToList() });
   backBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5L8 12l6.5 6.5"/></svg>';
   const title = el("div.notes-title", {}, [displayName(library)]);
+  // The sidebar's own "Lock" chip (libraryRow) is hidden on a phone while a library's files
+  // are open (the drill-down: .side-left only shows in "list" view) — without this, there'd
+  // be no way back to hidden at all on mobile short of the shortcut/tap gesture again.
+  const headActions: HTMLElement[] = [];
+  if (library.hidden && revealed.has(library.id)) {
+    headActions.push(el("button.chip.act", { type: "button", text: "Lock", onClick: () => lockLibrary(library) }));
+  }
   const uploadBtn = el<HTMLButtonElement>("button.chip.act", { type: "button", text: "Upload", onClick: () => openUploadSheet(library) });
+  headActions.push(uploadBtn);
 
   const list = el("div.notes-list");
 
@@ -363,7 +390,7 @@ function paintMain(): void {
     },
   });
 
-  const children: HTMLElement[] = [el("div.notes-main-head", {}, [backBtn, title, uploadBtn]), el("div.library-toolbar", {}, [searchInput, filterToggle])];
+  const children: HTMLElement[] = [el("div.notes-main-head", {}, [backBtn, title, ...headActions]), el("div.library-toolbar", {}, [searchInput, filterToggle])];
   if (filtersVisible) children.push(typeFilterRow(library));
   children.push(list);
   appendChildren(mainEl, ...children);
@@ -542,9 +569,9 @@ async function openPreview(file: LibraryFile, meta: LibraryFileMeta, contentKey:
     if (file.mimeType.startsWith("image/")) {
       scroll.appendChild(el<HTMLImageElement>("img.library-preview-media", { src: url, alt: meta.title }));
     } else if (file.mimeType.startsWith("video/")) {
-      scroll.appendChild(el<HTMLVideoElement>("video.library-preview-media", { src: url, controls: true, autoplay: true }));
+      scroll.appendChild(el<HTMLVideoElement>("video.library-preview-media", { src: url, controls: true }));
     } else if (file.mimeType.startsWith("audio/")) {
-      scroll.appendChild(el<HTMLAudioElement>("audio.library-preview-media", { src: url, controls: true, autoplay: true }));
+      scroll.appendChild(el<HTMLAudioElement>("audio.library-preview-media", { src: url, controls: true }));
     } else {
       scroll.appendChild(el("p.empty", { text: "This file type can't be previewed here." }));
     }

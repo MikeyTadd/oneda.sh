@@ -1,0 +1,44 @@
+name = "onedash"
+main = "src/worker/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# routes = [{ pattern = "oneda.sh", custom_domain = true }]
+
+# Public pre-auth shell only (section 13.1) — index.html/auth.js/manifest/sw/icons.
+# Everything under /app/ (tile bundles) is deliberately NOT served from here; it goes
+# through the Worker's session-gated route instead (section 13.2), so it must be built to
+# a separate output directory and served from src/worker/index.ts, not this binding.
+[assets]
+directory = "./public"
+binding = "SHELL_ASSETS"
+
+[[durable_objects.bindings]]
+name = "USER_SESSION"
+class_name = "UserSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["UserSession"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "onedash_db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "BLOBS"
+bucket_name = "onedash-blobs"
+
+# One Cron Trigger drives both reminder alarms fallback and RSS polling (section 6.1, 9a).
+[triggers]
+crons = ["*/15 * * * *"]
+
+[vars]
+ENVIRONMENT = "development"
+
+# Secrets (set via `wrangler secret put`, never committed):
+#   WEBAUTHN_RP_ID, WEBAUTHN_ORIGIN
+#   VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY
+#   MONZO_CLIENT_ID, MONZO_CLIENT_SECRET
+#   YOUTUBE_CLIENT_ID / SPOTIFY / BMW / RING credentials, as each integration tile is built

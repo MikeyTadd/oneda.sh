@@ -11617,22 +11617,32 @@ button.row.as-button {
   height: 17px;
 }
 
-/* ── Notes: folder tree + note list + editor ─────────────────────────────
- * `.notes-sidebar`/`.notes-main` are `.side`/`.main-col` (the exact desktop
- * padding, the mobile stacking, the hairline between them) rather than a
- * parallel set of layout rules — the same split every other screen already
- * has, just mirrored: here the narrow panel is navigation (mostly names) and
- * the wide one is content, the opposite of Settings' "wide controls, narrow
- * facts", so the column order and which edge carries the hairline both
- * flip. `data-view` (tiles/notes/index.ts) is the one genuinely new thing —
- * a folder tree and note list is real navigation (drill in, then back out),
- * not a side note about a main column, so a phone shows one pane at a time
- * instead of stacking both under a hairline the way `.split` normally does. */
-.notes-split[data-view="list"] .notes-main {
-  display: none;
-}
-.notes-split[data-view="editor"] .notes-sidebar {
-  display: none;
+/* ── Notes: folder tree + note list (the side) + editor (main-col) ────────
+ * The tile's own "split" layout (registry.ts) — `section > .split > .main-col
+ * + aside.side`, the identical structure Settings renders into, not a second
+ * one rebuilt inside it. Mirrored from Settings' own arrangement: here the
+ * narrow panel is navigation (mostly names) and the wide one is content, so
+ * the column order and which edge carries the hairline both flip. On a
+ * phone, `data-view` (tiles/notes/index.ts, set on the shared `.split`) still
+ * shows one pane at a time — a folder tree and note list is real navigation
+ * (drill in, then back out), not a side note the way `.split` normally
+ * stacks it. On a desktop, both panes show, side by side, exactly like
+ * Settings — but sticky, since a folder tree is short and constant while a
+ * note's length isn't, and letting it grow to match the note it sits next to
+ * was the actual bug two rounds of "fixing the scroll" both missed. */
+/* Phone only — `data-view` is a drill-down concept (show one pane, then the other) that
+ * doesn't mean anything once the desktop rule below shows both side by side regardless of
+ * it. Without this guard, hiding one pane via display: none also removes it from the grid
+ * entirely, and the surviving pane — now the *only* grid item — collapses into whichever
+ * track auto-placement gives a lone item (the narrow first one, 260px), not the width it
+ * actually has when both panes are present. */
+@media (max-width: 899px) {
+  .split[data-view="list"] .notes-main {
+    display: none;
+  }
+  .split[data-view="editor"] .notes-sidebar {
+    display: none;
+  }
 }
 /* `.side`'s own top margin/border/padding (shell.css's base rule) is for the mobile-stacked
  * case — separating it from the main column sitting above it. Notes never stacks the two; a
@@ -11641,31 +11651,38 @@ button.row.as-button {
   margin-top: 0;
   padding-top: 0;
   border-top: 0;
+  order: -1;
+}
+/* `:has()` rather than a class on `.split` itself: registry.ts builds that element and
+ * never knows which tile it belongs to, so scoping through the one child only Notes adds
+ * (.notes-sidebar) is the only hook available without changing the shell to know about
+ * individual tiles. */
+.split:has(> .notes-sidebar) {
+  grid-template-columns: minmax(0, 1fr);
 }
 @media (min-width: 900px) {
   /* Narrower than --side-w (380px, Settings' own side column): that width earns its keep
      holding paragraph text (About's blurb, a device's cached-data note); a folder tree and a
      list of note titles is short names, one per line, and 380px of them read as mostly empty
-     margin next to a name. */
-  .notes-split {
+     margin next to a name. Narrow-then-wide, not Settings' wide-then-narrow — `order: -1`
+     above moves .notes-sidebar into the first track, so the first column has to be the
+     narrow one for it to land in the right place. */
+  .split:has(> .notes-sidebar) {
     grid-template-columns: 260px minmax(0, 1fr);
-  }
-  /* The missing link that let a long note or list drag the whole page into one scrollbar:
-     `.side`/`.main-col` are grid items here (`.notes-split` is `display: grid`), and a grid
-     item's default min-height is `auto` — tall enough to fit its content, whatever that
-     takes, rather than the row's actual height. That let `.notes-sidebar`/`.notes-main` grow
-     past the view's height instead of staying put and letting `.notes-list`/`.note-body`
-     (each already `flex: 1; min-height: 0; overflow-y: auto`) do the actual scrolling — so
-     "New note" ended up wherever the sidebar's full content height happened to put it,
-     sometimes off-screen, instead of pinned to the bottom of a fixed-height pane. */
-  .notes-split[data-view] .notes-sidebar,
-  .notes-split[data-view] .notes-main {
-    display: flex;
-    min-height: 0;
   }
   .notes-sidebar {
     border-left: 0;
     border-right: 1px solid var(--hairline);
+    /* Pinned to the top of the view's own scroll (.view.active has overflow-y: auto) rather
+       than stretching to match the main column's height — a long note used to drag the
+       sidebar's grid row tall right along with it, and "New note" ended up wherever that
+       full height happened to put it. align-self: start is what lets it be shorter than the
+       row instead of the grid stretching it to match (the grid's own default). */
+    align-self: start;
+    position: sticky;
+    top: 0;
+    max-height: 100%;
+    overflow-y: auto;
   }
 }
 
@@ -11707,9 +11724,6 @@ button.row.as-button {
 }
 
 .notes-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   margin-top: var(--sp2);
 }
 .notes-list .row[data-current="true"] {
@@ -11806,8 +11820,6 @@ body.is-desktop .notes-back {
 .notes-editor-host {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: 0;
 }
 
 /* The editor itself (tiles/notes/editor.ts) — toolbar, the formatted
@@ -11882,7 +11894,6 @@ body.is-desktop .notes-back {
   line-height: 1.6;
 }
 .note-body {
-  overflow-y: auto;
   outline: none;
 }
 .note-body :first-child {

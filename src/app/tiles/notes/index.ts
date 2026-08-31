@@ -1,9 +1,13 @@
 // Notes: folders, markdown notes (bodies in R2 via ctx.blobs, metadata synced via
 // ctx.storage — see store.ts/types.ts) and an editor with a formatted view, a toolbar, and a
-// raw-markdown toggle (editor.ts). One own responsive layout rather than the shared
-// tile `.split` — a folder tree and note list is real navigation, not a side note about the
-// main column, and needs its own mobile drill-down (list, then editor) independent of the
-// shell's single split-stacks-under-a-hairline behaviour.
+// raw-markdown toggle (editor.ts). Uses the tile system's own "split" layout (registry.ts) —
+// the exact structure Settings renders into (section > .split > .main-col + aside.side), not
+// a second, hand-built one nested inside the "full"-layout wrapper. That extra nesting was
+// the actual cause of a run of height/background bugs a purely visual fix kept missing:
+// registry.ts's own .main-col wrapper, with our own .split rebuilt one level inside it,
+// fighting each other over which one was supposed to fill the view. render() owns the
+// editor (the tile's mainCol), renderSide() owns the folder tree and note list — mirrored via
+// CSS (grid-template-columns, order) since here the narrow panel is navigation, not facts.
 
 import { appendChildren, clear, el } from "../../shell/dom.js";
 import { ICONS, iconSvg } from "../../shell/icons.js";
@@ -42,31 +46,31 @@ const notesTile: Tile = {
   dataNamespace: "notes",
   encryptionTier: "e2ee", // section 1b — green lock: bodies and metadata are both E2EE
   layoutHint: "neutral", // section 14
-  layout: "full",
+  layout: "split",
 
   async init(tileCtx: TileContext) {
     ctx = tileCtx;
     state = await loadAll(ctx);
   },
 
+  // registry.ts builds `section > .split > .main-col + aside.side` and calls render(mainCol)
+  // then renderSide(side) — the identical structure Settings gets, not a second one rebuilt
+  // inside it. `data-view` (the phone drill-down: list, then a note, never both) lives on
+  // that shared `.split` ancestor, reached via .closest() since render()/renderSide() each
+  // only get their own pane.
   render(container: HTMLElement) {
-    // The same split every other screen uses (side + main-col, the desktop padding and the
-    // hairline between them) — mirrored, since here the narrow panel is the navigation (a
-    // folder tree and note list, mostly names) and the wide one is the content, the opposite
-    // of Settings' "wide controls, narrow facts" (notes-split, below, flips the column order
-    // and which edge carries the hairline). `data-view` is the one thing genuinely new: a
-    // phone drills into a note rather than stacking both panels, since this is real
-    // navigation, not a side note about a main column.
-    const shell = el("div.split.notes-split", { "data-view": "list" });
-    const sidebar = el("div.side.notes-sidebar");
-    const main = el("div.main-col.notes-main");
-    appendChildren(shell, sidebar, main);
-    container.appendChild(shell);
-    shellEl = shell;
-    sidebarEl = sidebar;
-    mainEl = main;
-    paintSidebar();
+    container.classList.add("notes-main");
+    mainEl = container;
+    shellEl = container.closest<HTMLElement>(".split");
+    shellEl?.setAttribute("data-view", "list");
     paintEmptyMain();
+  },
+
+  renderSide(container: HTMLElement) {
+    container.classList.add("notes-sidebar");
+    sidebarEl = container;
+    shellEl = container.closest<HTMLElement>(".split");
+    paintSidebar();
   },
 
   onSync() {

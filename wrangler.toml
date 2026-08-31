@@ -13,6 +13,11 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./public"
 binding = "SHELL_ASSETS"
 
+# dist/app/*.txt is the built gated bundle (`npm run build:app`, section 4.4/13.2) — a JS
+# module and a stylesheet, both bundled as plain text so index.ts can stream them back to an
+# authenticated caller without ever executing them inside the Worker. No `[[rules]]` entry
+# needed: Wrangler already treats `**/*.txt` as a Text-module import by default.
+
 [[durable_objects.bindings]]
 name = "USER_SESSION"
 class_name = "UserSession"

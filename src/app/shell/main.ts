@@ -4,25 +4,20 @@
 // sync layers together and hands off to the shell (shell.ts) once they're
 // ready; it owns no UI of its own.
 
-import { generateDek } from "../crypto/keys.js";
 import { createEncryptedStorage } from "../storage/db.js";
 import { createSyncQueue } from "../sync/queue.js";
 import { mountShell } from "./shell.js";
 
-export async function start(): Promise<void> {
-  // TODO: the real flow unwraps the account's persisted DEK via
-  // unwrapDek(wrapped, iv, masterKey), where wrapped/iv come from the
-  // server (issued at registration, section 2.3) and masterKey from
-  // deriveMasterKey(credentialId) using this device's passkey. Neither the
-  // wrapped-DEK fetch nor the credential id are threaded through yet —
-  // finishRegistration/finishAuthentication in src/worker/index.ts are
-  // still `501 not implemented` stubs. Generating a fresh, unpersisted DEK
-  // here is a scaffold placeholder so the shell is exercisable before that
-  // lands; it must not survive to a real build; a fresh DEK every page load
-  // makes today's local storage unreadable on the next visit, which is
-  // expected until the real key path exists.
-  const dek = await generateDek();
+export interface StartOptions {
+  /** Already unwrapped by the caller (public/shell/auth.js) before this bundle was even
+   * fetched — deriving the master key and unwrapping/generating the DEK has to happen
+   * pre-auth regardless (registration must send a wrapped DEK in the same request that
+   * proves the passkey, section 2.3), so it lives in the pre-auth bundle rather than here.
+   * This module never touches the master key or the wrapping step, only the result. */
+  dek: CryptoKey;
+}
 
+export async function start({ dek }: StartOptions): Promise<void> {
   const storage = createEncryptedStorage(dek);
   const syncQueue = createSyncQueue(`wss://${location.host}/sync`);
 
@@ -34,9 +29,8 @@ export async function start(): Promise<void> {
 /** The pre-auth shell (public/shell/index.html) links no post-auth CSS —
  * shell.css only matters once this bundle has loaded, so it's pulled in
  * here rather than paid for by every anonymous visitor. Served from the
- * same session-gated route as this module once serveGatedBundle
- * (src/worker/index.ts) actually streams bundle assets; today that route
- * still answers 404, so this is inert until that lands. */
+ * same session-gated route as this module (serveGatedBundle,
+ * src/worker/index.ts), built alongside it by scripts/build-app.mjs. */
 function loadShellStylesheet(): void {
   if (document.getElementById("shell-css")) return;
   const link = document.createElement("link");

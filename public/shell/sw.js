@@ -4,7 +4,7 @@
 // DEK lives in page memory, not in the service worker's scope.
 
 // Bump on any shell change — that bump is what actually ships a new shell.
-const CACHE_NAME = "onedash-shell-v2";
+const CACHE_NAME = "onedash-shell-v3";
 const SHELL_ASSETS = [
   "/shell/index.html",
   "/shell/auth.js",

@@ -1,6 +1,9 @@
-// Session token validation (section 9b). A session is issued only after a successful
+// Session issuance & validation (section 9b). A session is issued only after a successful
 // WebAuthn verification (src/worker/auth/webauthn.ts) and gates every protected route,
 // including the tile bundle route in index.ts (section 13.2).
+
+import { getCookie, setCookie, clearCookie } from "./cookies.js";
+import { bytesToBase64Url } from "./bytes.js";
 
 export interface Env {
   DB: D1Database;
@@ -21,16 +24,42 @@ export interface SessionRow {
   revoked_at: number | null;
 }
 
-const SESSION_COOKIE = "onedash_session";
+export const SESSION_COOKIE = "onedash_session";
+// Sessions are revoke-based (section 9b), not time-based, so the cookie itself is
+// long-lived; a lost/stolen device is dealt with via device-list revocation, not expiry.
+const SESSION_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 400;
 
 export function extractSessionToken(request: Request): string | null {
   const header = request.headers.get("Authorization");
   if (header?.startsWith("Bearer ")) return header.slice("Bearer ".length);
+  return getCookie(request, SESSION_COOKIE);
+}
 
-  const cookie = request.headers.get("Cookie");
-  if (!cookie) return null;
-  const match = cookie.match(new RegExp(`${SESSION_COOKIE}=([^;]+)`));
-  return match?.[1] ?? null;
+/** Issues a session row for a just-verified credential and returns the raw token — callers
+ * write it to the response via setSessionCookie. */
+export async function createSession(
+  env: Env,
+  userId: string,
+  credentialId: string,
+  deviceLabel: string
+): Promise<string> {
+  const token = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const now = Date.now();
+  await env.DB.prepare(
+    `INSERT INTO sessions (token, user_id, credential_id, device_label, created_at, last_seen_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(token, userId, credentialId, deviceLabel, now, now)
+    .run();
+  return token;
+}
+
+export function setSessionCookie(headers: Headers, token: string): void {
+  setCookie(headers, SESSION_COOKIE, token, { path: "/", maxAge: SESSION_COOKIE_MAX_AGE_SECONDS });
+}
+
+export function clearSessionCookie(headers: Headers): void {
+  clearCookie(headers, SESSION_COOKIE, "/");
 }
 
 /**

@@ -13,6 +13,12 @@ import type { Env } from "../lib/session.js";
 
 const RP_NAME = "onedash";
 
+// Named aliases for the (identically-named, easily confused) "response" parameter each
+// verify*Response function takes — this is the full *ResponseJSON object the browser
+// produces from navigator.credentials.create()/get(), not just its inner `.response` field.
+export type RegistrationResponseJSON = Parameters<typeof verifyRegistrationResponse>[0]["response"];
+export type AuthenticationResponseJSON = Parameters<typeof verifyAuthenticationResponse>[0]["response"];
+
 function rpConfig(env: Env) {
   const rpID = env.WEBAUTHN_RP_ID ?? "oneda.sh";
   const origin = env.WEBAUTHN_ORIGIN ?? `https://${rpID}`;

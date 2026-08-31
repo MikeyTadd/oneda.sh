@@ -15,8 +15,10 @@ export interface SyncRecord {
 }
 
 /** What the shell's connection chip reports. "connecting" covers both the first
- * attempt and every reconnect — from the reader's side they're the same fact. */
-export type SyncStatus = "connecting" | "online" | "offline";
+ * attempt and every reconnect — from the reader's side they're the same fact —
+ * and "disconnected" is the device having no network at all, which is the one
+ * case where trying again immediately would be pointless. */
+export type SyncStatus = "connecting" | "connected" | "disconnected";
 
 export interface SyncQueue {
   push(record: SyncRecord): void;
@@ -62,7 +64,7 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
 
   /** Offline is a fact the browser already knows; no point dialling to find out. */
   function idleStatus(): SyncStatus {
-    return navigator.onLine ? "connecting" : "offline";
+    return navigator.onLine ? "connecting" : "disconnected";
   }
 
   function connect(): void {
@@ -82,7 +84,7 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
 
     ws.onopen = () => {
       retryMs = RETRY_MIN_MS;
-      setStatus("online");
+      setStatus("connected");
       startHeartbeat();
       void flush();
     };
@@ -175,7 +177,7 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
     retryMs = RETRY_MIN_MS;
     if (!socket) connect();
   });
-  addEventListener("offline", () => setStatus("offline"));
+  addEventListener("offline", () => setStatus("disconnected"));
 
   // Returning to the app is exactly when "is this still connected?" needs an
   // answer, and exactly when the socket is most likely to have died unnoticed

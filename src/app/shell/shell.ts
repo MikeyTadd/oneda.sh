@@ -119,9 +119,9 @@ function connectionChip(where: "rail" | "appbar"): HTMLElement {
 }
 
 const CONNECTION_COPY: Record<SyncStatus, { cls: string; label: string }> = {
-  online: { cls: "live", label: "Connected" },
+  connected: { cls: "live", label: "Connected" },
   connecting: { cls: "hold", label: "Connecting" },
-  offline: { cls: "red", label: "Offline" },
+  disconnected: { cls: "red", label: "Not connected" },
 };
 
 function paintConnection(status: SyncStatus): void {

@@ -29,11 +29,15 @@ new_sqlite_classes = ["UserSession"]
 [[d1_databases]]
 binding = "DB"
 database_name = "onedash_db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "3d46a540-1264-426d-a613-5294f46d367a"
+# Created in WEUR — the whole system is UK-only by design (section 1), so there's no reason
+# to let the primary land anywhere else. A database id is a resource identifier, not a
+# credential: it's useless without an API token, hence committed rather than a secret.
 
 [[r2_buckets]]
 binding = "BLOBS"
 bucket_name = "onedash-blobs"
+# Also created with a WEUR location hint, to match the D1 primary above.
 
 # One Cron Trigger drives both reminder alarms fallback and RSS polling (section 6.1, 9a).
 [triggers]

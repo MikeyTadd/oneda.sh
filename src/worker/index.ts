@@ -14,6 +14,7 @@ import {
   extractSessionToken,
   createSession,
   setSessionCookie,
+  clearSessionCookie,
   type Env,
 } from "./lib/session.js";
 import { writeChallengeCookie, readChallengeCookie, clearChallengeCookie } from "./lib/challenge.js";
@@ -182,6 +183,22 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const res = Response.json({ ok: true });
       clearChallengeCookie(res.headers);
       setSessionCookie(res.headers, token);
+      return res;
+    }
+    case "/auth/logout": {
+      // Ends this device's session and clears the cookie. What makes Settings'
+      // reset honest: the cookie is HttpOnly by design, so the page cannot drop
+      // it itself, and a reset that left the device signed in would be exactly
+      // the wrong half to skip. Revoked rather than deleted — section 9b wants
+      // the row to survive as a record for the device list.
+      const token = extractSessionToken(request);
+      if (token) {
+        await env.DB.prepare(`UPDATE sessions SET revoked_at = ? WHERE token = ? AND revoked_at IS NULL`)
+          .bind(Date.now(), token)
+          .run();
+      }
+      const res = new Response(null, { status: 204 });
+      clearSessionCookie(res.headers);
       return res;
     }
     case "/auth/login/start": {

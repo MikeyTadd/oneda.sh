@@ -15,6 +15,8 @@ import { alert } from "./alerts.js";
 import { appendChildren, clear, el, type ElChild } from "./dom.js";
 import { ICONS, iconSvg } from "./icons.js";
 import { openNavEditor, type NavEditDeps } from "./nav-edit.js";
+import { openSheet, sheetFoot, sheetHead } from "./sheet.js";
+import { applyUpdate, checkForUpdate, resetApp, shellVersion } from "./updates.js";
 import { BAR_SLOTS } from "./nav.js";
 import { prefs, setPref } from "./prefs.js";
 import type { TileManifest } from "../tiles/types.js";
@@ -86,7 +88,7 @@ export function renderSettings(container: HTMLElement, deps: SettingsDeps): void
       alertsBlock(),
       accountBlock(),
     ]);
-    const side = el("aside.side", {}, [aboutBlock(deps.appName)]);
+    const side = el("aside.side", {}, [aboutBlock(deps.appName), maintenanceBlock()]);
     appendChildren(container, el("div.split", {}, [mainCol, side]));
   };
   paint();
@@ -236,6 +238,98 @@ function accountBlock(): HTMLElement {
       text: "Signing in on a second device, the device list and remote sign-out (design doc §9b) arrive with the passkey endpoints — those still answer 501, so there is nothing here to switch on yet.",
     }),
   ]);
+}
+
+/**
+ * Two escape hatches, both aimed at a build that is still moving. The update
+ * check exists because the browser refetches sw.js on its own schedule and "am I
+ * on the newest build?" is otherwise unanswerable from inside an installed app;
+ * the reset exists because the answer is sometimes "no, and the cache is why".
+ */
+function maintenanceBlock(): HTMLElement {
+  const status = el("p.empty.maint-note", { text: "" });
+
+  const version = el("div.kv", {}, [el("span", { text: "Version" }), el("span.v", { text: "…" })]);
+  void shellVersion().then((v) => {
+    const slot = version.querySelector(".v");
+    // Null while the first install is still in flight, which is a real state and
+    // worth saying rather than printing a confident blank.
+    if (slot) slot.textContent = v ?? "Installing…";
+  });
+
+  const check = el<HTMLButtonElement>("button.btn.ghost.wide", {
+    type: "button",
+    text: "Check for updates",
+    onClick: async () => {
+      check.disabled = true;
+      status.textContent = "Checking…";
+      const result = await checkForUpdate();
+      check.disabled = false;
+      if (result.state === "ready") {
+        status.textContent = "New version found — refreshing.";
+        applyUpdate(result.worker);
+        return;
+      }
+      status.textContent =
+        result.state === "unsupported"
+          ? "No service worker on this device — nothing to update."
+          : "You are on the newest version.";
+    },
+  });
+
+  const reset = el("button.btn.ghost.wide.danger", {
+    type: "button",
+    text: "Reset this device",
+    onClick: () => confirmReset(),
+  });
+
+  return el("section.set-block", {}, [blockHead("Maintenance"), version, check, reset, status]);
+}
+
+/**
+ * A reset takes the encrypted records with the cache, so it asks — and lists what
+ * goes, rather than asking "are you sure?" about a scope the reader would have to
+ * guess at.
+ *
+ * The sentence that matters is the last one: on this account nothing is stored in
+ * a form the server could give back, so a reset is not a sync away from being
+ * undone. It is the whole point of the app and the sharpest edge of it.
+ */
+function confirmReset(): void {
+  const node = openSheet("confirm", { label: "Reset this device" });
+  const go = el<HTMLButtonElement>("button.btn.go.danger", {
+    type: "button",
+    text: "Reset and reload",
+    onClick: () => {
+      go.disabled = true;
+      go.textContent = "Resetting…";
+      void resetApp();
+    },
+  });
+
+  node.append(
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Reset this device", "This cannot be undone"),
+      el("div.sheet-scroll", {}, [
+        el("p.confirm-lead", {
+          text: "Everything this app has stored on this device is deleted, and it reloads from scratch:",
+        }),
+        el("ul.confirm-list", {}, [
+          el("li", { text: "Every tile's records, held encrypted on this device" }),
+          el("li", { text: "Preferences, navigation order and this device's alerts" }),
+          el("li", { text: "The cached shell and the service worker itself" }),
+          el("li", { text: "This device's session — you will need your passkey again" }),
+        ]),
+        el("p.empty", {
+          text: "Your passkey is not touched, and anything already synced is still on the server as ciphertext. Anything that had not synced yet is gone, and nobody can recover it.",
+        }),
+      ]),
+      sheetFoot([
+        el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }),
+        go,
+      ]),
+    ])
+  );
 }
 
 function aboutBlock(appName: string): HTMLElement {

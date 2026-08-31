@@ -42,35 +42,12 @@ function fail(what, err) {
 // Registered only now that the ceremony is known to work: a cache-first worker installed
 // during bring-up would have pinned a broken shell into the browser. Gives the lock screen
 // offline (section 5) and gives push something to wake (section 6).
+// Registered here so the lock screen itself works offline. Noticing updates and
+// offering the refresh is the app's job, not this file's — see
+// src/app/shell/updates.ts.
 if ("serviceWorker" in navigator) {
-  // Whether this page was already under a worker's control when it loaded. A
-  // controller arriving where there was none is just the first registration
-  // taking hold — not a new build — and must not trigger a reload.
-  const hadController = Boolean(navigator.serviceWorker.controller);
-  let reloading = false;
-
   addEventListener("load", () => {
-    void navigator.serviceWorker
-      .register("/sw.js")
-      .then((registration) => {
-        // An installed PWA resumes from iOS's snapshot instead of reloading, so
-        // it can go on running a build from days ago with nothing to prompt it
-        // otherwise. Checking each time the app comes back to the foreground is
-        // what makes a deploy actually reach the phone.
-        addEventListener("visibilitychange", () => {
-          if (document.visibilityState === "visible") void registration.update();
-        });
-      })
-      .catch((err) => console.error("sw", err));
-  });
-
-  // A new worker taking over means new code is available; the page in front of
-  // the reader is the old one, so replace it. Guarded both ways: never on the
-  // first registration, and never twice.
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!hadController || reloading) return;
-    reloading = true;
-    location.reload();
+    void navigator.serviceWorker.register("/sw.js").catch((err) => console.error("sw", err));
   });
 }
 

@@ -4,7 +4,7 @@
 // DEK lives in page memory, not in the service worker's scope.
 
 // Bump on any shell change — that bump is what actually ships a new shell.
-const CACHE_NAME = "onedash-shell-v5";
+const CACHE_NAME = "onedash-shell-v6";
 const SHELL_ASSETS = [
   // The lock screen is served at the scope root (public/index.html), which is what
   // manifest.json's start_url points at — not /shell/index.html.
@@ -17,12 +17,29 @@ const SHELL_ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
+  // Deliberately no skipWaiting: a new build waits until the app asks for it
+  // (src/app/shell/updates.ts). Taking over unasked reloads the page out from
+  // under whoever is reading it, and in a standalone app with no address bar a
+  // reload loop can only be escaped by deleting the app.
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)));
-  self.skipWaiting();
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    (async () => {
+      // Every older shell cache, so a device isn't carrying a build's worth of
+      // dead assets for each version it has ever run.
+      const keys = await caches.keys();
+      await Promise.all(
+        keys.filter((key) => key.startsWith("onedash-shell-") && key !== CACHE_NAME).map((key) => caches.delete(key))
+      );
+      await self.clients.claim();
+    })()
+  );
 });
 
 self.addEventListener("fetch", (event) => {

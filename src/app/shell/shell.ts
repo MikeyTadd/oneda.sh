@@ -21,6 +21,7 @@ import { openMoreSheet, type NavEditDeps } from "./nav-edit.js";
 import { buildNav, defaultRoute, loadNavOrder, navById, order, saveNavOrder, split, type NavDestination } from "./nav.js";
 import { loadPrefs, prefs } from "./prefs.js";
 import { renderSettings } from "./settings.js";
+import { watchForUpdates } from "./updates.js";
 
 /** The app's name, in the one place the shell prints it. */
 const APP_NAME = "oneda";
@@ -89,6 +90,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   // onStatus fires immediately with the current value, so the chip is never
   // blank waiting for the first change.
   deps.syncQueue.onStatus(paintConnection);
+  watchForUpdates();
 
   paintNav(nav, orderedIds);
   wireRouter(nav, () => orderedIds);

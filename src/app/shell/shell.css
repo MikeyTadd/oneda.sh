@@ -5151,7 +5151,15 @@ a.t-row:hover {
     min-height: 0;
   }
 
-  .split > .main-col {
+  /* Not scoped to `.split >`: a "full"-layout tile's `.main-col` (tiles/registry.ts) is a
+     bare direct child of its view, no `.split` wrapper, and F1 Apex — where this rule and
+     its 22px are from — never had that shape, since every one of its own screens is a
+     `.split`. Notes is the first tile to actually render "full" on a desktop a reader has
+     seen, and its `.main-col` sat flush against the app bar's hairline with none of this
+     padding at all, reading as part of the bar rather than the first thing on the screen —
+     the exact failure mode the comment above this media query catalogues for every other
+     screen `.split > .main-col` already covers. */
+  .main-col {
     padding: 22px 24px 40px;
     min-width: 0;
     display: flex;
@@ -5329,7 +5337,7 @@ a.t-row:hover {
 }
 
 @media (min-width: 1400px) {
-  .split > .main-col {
+  .main-col {
     padding: 26px 32px 48px;
   }
   .side {
@@ -11569,38 +11577,42 @@ button.row.as-button {
 }
 
 /* ── Notes: folder tree + note list + editor ─────────────────────────────
- * Its own responsive layout rather than the shared `.split` — a folder tree
- * and note list is real navigation (drill in, then back out), not a side
- * note about a main column, so it needs a genuine two-state phone view
- * rather than two columns stacked under a hairline. `data-view` (set by
- * tiles/notes/index.ts) picks which pane shows on a phone; `body.is-desktop`
- * (shell.ts's own breakpoint, matched here rather than a second one of its
- * own) shows both, always, as a fixed two-column grid. */
-.notes-shell {
-  min-height: 0;
-  height: 100%;
-}
-.notes-sidebar,
-.notes-main {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-.notes-shell[data-view="list"] .notes-main {
+ * `.notes-sidebar`/`.notes-main` are `.side`/`.main-col` (the exact desktop
+ * padding, the mobile stacking, the hairline between them) rather than a
+ * parallel set of layout rules — the same split every other screen already
+ * has, just mirrored: here the narrow panel is navigation (mostly names) and
+ * the wide one is content, the opposite of Settings' "wide controls, narrow
+ * facts", so the column order and which edge carries the hairline both
+ * flip. `data-view` (tiles/notes/index.ts) is the one genuinely new thing —
+ * a folder tree and note list is real navigation (drill in, then back out),
+ * not a side note about a main column, so a phone shows one pane at a time
+ * instead of stacking both under a hairline the way `.split` normally does. */
+.notes-split[data-view="list"] .notes-main {
   display: none;
 }
-.notes-shell[data-view="editor"] .notes-sidebar {
+.notes-split[data-view="editor"] .notes-sidebar {
   display: none;
 }
-body.is-desktop .notes-shell {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: var(--sp6);
-  align-items: start;
+/* `.side`'s own top margin/border/padding (shell.css's base rule) is for the mobile-stacked
+ * case — separating it from the main column sitting above it. Notes never stacks the two; a
+ * phone shows exactly one, standalone, so there is nothing above it to separate from. */
+.notes-sidebar {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
-body.is-desktop .notes-shell[data-view] .notes-sidebar,
-body.is-desktop .notes-shell[data-view] .notes-main {
-  display: flex;
+@media (min-width: 900px) {
+  .notes-split {
+    grid-template-columns: var(--side-w) minmax(0, 1fr);
+  }
+  .notes-split[data-view] .notes-sidebar,
+  .notes-split[data-view] .notes-main {
+    display: flex;
+  }
+  .notes-sidebar {
+    border-left: 0;
+    border-right: 1px solid var(--hairline);
+  }
 }
 
 .notes-sidebar-head {

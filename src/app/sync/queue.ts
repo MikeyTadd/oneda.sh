@@ -26,6 +26,12 @@ export interface SyncQueue {
   onIncoming(handler: (record: SyncRecord) => void): void;
   /** Called on every change, and once immediately with the current value. */
   onStatus(handler: (status: SyncStatus) => void): void;
+  /** How many local writes haven't gone out over the socket yet — "haven't gone out" is as
+   * far as this can honestly report, since there's no ack from the Durable Object once they
+   * do (webSocketMessage, UserSession.ts, never replies); the shell's save indicator reads
+   * this to distinguish "still saving" from "sent", not from "the server has definitely
+   * durably stored it". Called on every change, and once immediately with the current value. */
+  onPendingChange(handler: (count: number) => void): void;
 }
 
 /** Wraps a WebSocket connection to the user's Durable Object (section 3.1). Reconnection
@@ -49,6 +55,7 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
   const pending: SyncRecord[] = [];
   const incomingHandlers: Array<(record: SyncRecord) => void> = [];
   const statusHandlers: Array<(status: SyncStatus) => void> = [];
+  const pendingHandlers: Array<(count: number) => void> = [];
   let socket: WebSocket | null = null;
   let status: SyncStatus = "connecting";
   let retryMs = RETRY_MIN_MS;
@@ -60,6 +67,10 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
     if (next === status) return;
     status = next;
     for (const handler of statusHandlers) handler(next);
+  }
+
+  function notifyPending(): void {
+    for (const handler of pendingHandlers) handler(pending.length);
   }
 
   /** Offline is a fact the browser already knows; no point dialling to find out. */
@@ -163,10 +174,12 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
 
   async function flush(): Promise<void> {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (pending.length === 0) return;
     while (pending.length > 0) {
       const record = pending.shift()!;
       socket.send(encodeEnvelope(record));
     }
+    notifyPending();
   }
 
   connect();
@@ -194,6 +207,7 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
   return {
     push(record: SyncRecord) {
       pending.push(record);
+      notifyPending();
       void flush();
     },
     flush,
@@ -203,6 +217,10 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
     onStatus(handler) {
       statusHandlers.push(handler);
       handler(status);
+    },
+    onPendingChange(handler) {
+      pendingHandlers.push(handler);
+      handler(pending.length);
     },
   };
 }

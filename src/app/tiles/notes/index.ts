@@ -49,9 +49,16 @@ const notesTile: Tile = {
   },
 
   render(container: HTMLElement) {
-    const shell = el("div.notes-shell", { "data-view": "list" });
-    const sidebar = el("div.notes-sidebar");
-    const main = el("div.notes-main");
+    // The same split every other screen uses (side + main-col, the desktop padding and the
+    // hairline between them) — mirrored, since here the narrow panel is the navigation (a
+    // folder tree and note list, mostly names) and the wide one is the content, the opposite
+    // of Settings' "wide controls, narrow facts" (notes-split, below, flips the column order
+    // and which edge carries the hairline). `data-view` is the one thing genuinely new: a
+    // phone drills into a note rather than stacking both panels, since this is real
+    // navigation, not a side note about a main column.
+    const shell = el("div.split.notes-split", { "data-view": "list" });
+    const sidebar = el("div.side.notes-sidebar");
+    const main = el("div.main-col.notes-main");
     appendChildren(shell, sidebar, main);
     container.appendChild(shell);
     shellEl = shell;
@@ -257,15 +264,26 @@ async function removeNote(note: NoteMeta): Promise<void> {
   }
   await deleteNote(ctx, note);
   state.notes = state.notes.filter((n) => n.id !== note.id);
-  if (currentNote?.id === note.id) closeNote();
-  else paintSidebar();
+  if (currentNote?.id === note.id) {
+    // Not closeNote(): its flush would save the still-open editor's last content right back
+    // over the tombstone deleteNote() just wrote, resurrecting the note on the next reload —
+    // exactly the bug this was. There is nothing left to save; only the view resets.
+    currentNote = null;
+    editor = null;
+    shellEl?.setAttribute("data-view", "list");
+    paintSidebar();
+    paintEmptyMain();
+  } else {
+    paintSidebar();
+  }
 }
 
-function closeNote(): void {
-  void flushPendingSave();
+async function closeNote(): Promise<void> {
+  await flushPendingSave();
   currentNote = null;
   editor = null;
   shellEl?.setAttribute("data-view", "list");
+  paintSidebar(); // the title (or content) may just have changed — the list should say so
   paintEmptyMain();
 }
 

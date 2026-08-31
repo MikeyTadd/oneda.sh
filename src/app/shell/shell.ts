@@ -75,7 +75,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   // router's fallback and the Settings screen can never drift apart.
   let orderedIds = order(saved, manifests);
 
-  buildChrome(root);
+  buildChrome(root, deps.syncQueue);
 
   const container = document.getElementById("views")!;
   await mountInstalledTiles(container, { storage: deps.storage, syncQueue: deps.syncQueue, blobs: deps.blobs }, registryEntries);
@@ -105,7 +105,21 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
 
   // onStatus fires immediately with the current value, so the chip is never
   // blank waiting for the first change.
-  deps.syncQueue.onStatus(paintConnection);
+  deps.syncQueue.onStatus((status) => {
+    connectionStatus = status;
+    paintConnection(status);
+    paintSyncStatus();
+  });
+  deps.syncQueue.onPendingChange((count) => {
+    // The transition into "nothing left queued" is the only thing worth timestamping —
+    // watching the count itself tells the reader "saving" vs "sent" already.
+    if (pendingWrites > 0 && count === 0) lastSyncedAt = Date.now();
+    pendingWrites = count;
+    paintSyncStatus();
+  });
+  // The relative-time label ("Synced 40s ago") goes stale sitting still — nothing else
+  // re-renders it once the write itself is long done.
+  setInterval(paintSyncStatus, 15_000);
   watchForUpdates();
 
   paintNav(nav, orderedIds);
@@ -169,7 +183,59 @@ function paintConnection(status: SyncStatus): void {
   });
 }
 
-function buildChrome(root: HTMLElement): void {
+/** Whether a write has actually left the device, distinct from the connection chip above:
+ * that only says the socket is up, not whether anything is still queued behind it. F1
+ * Apex's own sync-status line (.ss-line/.ss-dot/.ss-text/.ss-now — the same class it uses),
+ * not a fresh one, so this reads as the same fact it already shows there. "Sent" is the most
+ * this can honestly claim — there's no ack back from the Durable Object once a record
+ * arrives (UserSession.ts never replies to a data frame), so "confirmed durably stored
+ * server-side" isn't a thing this can show without adding that ack, which nothing here
+ * needed until this. */
+let connectionStatus: SyncStatus = "connecting";
+let pendingWrites = 0;
+let lastSyncedAt: number | null = null;
+
+function syncStatusLine(syncQueue: SyncQueue): HTMLElement {
+  const dot = el("span.ss-dot");
+  const text = el("span.ss-text", { text: "" });
+  const now = el("button.chip.act.ss-now", { type: "button", text: "Sync now", onClick: () => void syncQueue.flush() });
+  return el("div.ss-line#sync-status", {}, [dot, text, now]);
+}
+
+function paintSyncStatus(): void {
+  const line = document.getElementById("sync-status");
+  if (!line) return;
+  const text = line.querySelector(".ss-text");
+  const now = line.querySelector<HTMLButtonElement>(".ss-now");
+
+  let label: string;
+  let bad = false;
+  if (pendingWrites > 0) {
+    label = connectionStatus === "connected" ? "Saving…" : "Not saved yet — offline";
+    bad = connectionStatus !== "connected";
+  } else if (connectionStatus === "connected") {
+    label = lastSyncedAt ? `Synced ${relativeShort(lastSyncedAt)}` : "Synced";
+  } else if (connectionStatus === "connecting") {
+    label = "Connecting…";
+  } else {
+    label = "Offline — nothing waiting to send";
+  }
+
+  line.classList.toggle("bad", bad);
+  if (text) text.textContent = label;
+  if (now) now.disabled = pendingWrites === 0 || connectionStatus !== "connected";
+}
+
+function relativeShort(at: number): string {
+  const secs = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (secs < 5) return "just now";
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  return `${Math.round(mins / 60)}h ago`;
+}
+
+function buildChrome(root: HTMLElement, syncQueue: SyncQueue): void {
   root.innerHTML = "";
 
   const shell = el("div#shell");
@@ -211,7 +277,7 @@ function buildChrome(root: HTMLElement): void {
   const topWho = el("div.bar-who");
   appendChildren(topWho, el("span.context#topbar-context", { text: "" }), el("span.title#topbar-title", { text: "" }));
   const topbarBell = el("button.bar-bell#topbar-bell", { type: "button", "aria-label": "Alerts" });
-  appendChildren(topbar, topWho, el("span.grow"), topbarBell);
+  appendChildren(topbar, topWho, el("span.grow"), syncStatusLine(syncQueue), topbarBell);
   appendChildren(topbarWrap, topbar);
 
   const views = el("main#views");

@@ -12038,7 +12038,10 @@ body.is-desktop .notes-back {
   padding: 10px 12px;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  /* iOS Safari auto-zooms the whole page on focus for any text input under 16px — not a
+     Library-specific quirk, just the platform's own rule, so this stays at 16px rather than
+     the 14px every other font-size in this file uses for compact chrome text. */
+  font-size: 16px;
 }
 .text-input::placeholder {
   color: var(--n600);

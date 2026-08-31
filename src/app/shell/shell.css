@@ -4508,10 +4508,13 @@ body.theme-team {
   #view-constructor .main-col,
   #view-circuit .main-col,
   #view-news .main-col,
-  /* Home (tiles/home/index.ts) — a normal registry-mounted tile, so it has no #view-home
-     id the way Settings has #view-settings (that id only exists for hand-built views); same
-     case as Notes' own .notes-main a few hundred lines down, addressed by class instead. */
-  .home-main {
+  /* Home (tiles/home/index.ts) and Notes (both .notes-main, the editor, and .notes-sidebar,
+     the folder/note list — "New note" now leads it) — normal registry-mounted tiles, so
+     neither has a #view-home/#view-notes id the way Settings has #view-settings (that id
+     only exists for hand-built views), addressed by class instead. */
+  .home-main,
+  .notes-main,
+  .notes-sidebar {
     padding-top: var(--sp8);
   }
 
@@ -11653,22 +11656,19 @@ button.row.as-button {
   .split[data-view="editor"] .notes-sidebar {
     display: none;
   }
-  /* `.side`'s own top margin/border/padding (shell.css's base rule) is for the mobile-stacked
-     case — separating it from the main column sitting above it. Notes never stacks the two; a
-     phone shows exactly one, standalone, so there is nothing above it to separate from. */
+  /* `.side`'s own top margin/border (shell.css's base rule) is for the mobile-stacked case —
+     separating it from the main column sitting above it. Notes never stacks the two; a phone
+     shows exactly one, standalone, so there is nothing above it to separate from. Top padding
+     is NOT zeroed here though — unlike the base `.side` rule, whose padding-top only matters
+     stacked under something, Notes' sidebar leads its own screen ("New note" is the first
+     thing on it) and needs the same --sp8 clearance under the app bar as .notes-main and
+     .home-main get, from the shared list a few hundred lines up. Zeroing it here after that
+     list already sets it (later in the file, so it would win) was the actual bug: "New note"
+     sat flush against the app bar's hairline exactly like .notes-main did before it got the
+     same fix. */
   .notes-sidebar {
     margin-top: 0;
-    padding-top: 0;
     border-top: 0;
-  }
-  /* `.main-col`'s own base rule (top of this file) carries no top padding at all — every
-     other screen that leads with its own content on a phone opts into `--sp8` explicitly
-     (the `#view-settings .main-col` etc. list a few hundred lines up) so it doesn't sit
-     flush against the app bar's hairline. Notes' editor is the same case: the title/toolbar
-     are the first thing on the screen once the sidebar is hidden, so they need the same
-     clearance, just addressed by class instead of by id since Notes has no `#view-notes`. */
-  .notes-main {
-    padding-top: var(--sp8);
   }
 }
 .notes-sidebar {

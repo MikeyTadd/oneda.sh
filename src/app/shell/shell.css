@@ -5377,14 +5377,10 @@ a.t-row:hover {
   }
 }
 
-@media (min-width: 1400px) {
-  .main-col {
-    padding: 26px 32px 48px;
-  }
-  .side {
-    padding: 26px 28px;
-  }
-}
+/* No further bump past 900px — one padding/gap for every desktop width, not a second,
+   larger one past 1400px. A window crossing that line used to visibly jump between two
+   different paddings mid-resize; every tile now keeps the same 22px rhythm regardless of
+   how wide the window gets. */
 
 /* ═══ driver sheet ════════════════════════════════════════════════════ */
 
@@ -11653,6 +11649,15 @@ button.row.as-button {
     margin-top: 0;
     padding-top: 0;
     border-top: 0;
+  }
+  /* `.main-col`'s own base rule (top of this file) carries no top padding at all — every
+     other screen that leads with its own content on a phone opts into `--sp8` explicitly
+     (the `#view-settings .main-col` etc. list a few hundred lines up) so it doesn't sit
+     flush against the app bar's hairline. Notes' editor is the same case: the title/toolbar
+     are the first thing on the screen once the sidebar is hidden, so they need the same
+     clearance, just addressed by class instead of by id since Notes has no `#view-notes`. */
+  .notes-main {
+    padding-top: var(--sp8);
   }
 }
 .notes-sidebar {

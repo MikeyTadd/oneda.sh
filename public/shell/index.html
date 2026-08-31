@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>onedash</title>
+  <link rel="manifest" href="/shell/manifest.json" />
+  <meta name="theme-color" content="#0f766e" />
+  <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+  <style>
+    :root { color-scheme: dark light; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #0b0f0e; color: #e7f3f1;
+      font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .lock { text-align: center; padding: 2rem; }
+    .mark {
+      width: 64px; height: 64px; margin: 0 auto 1.5rem; border-radius: 18px;
+      background: #14b8a6; position: relative;
+    }
+    .mark::before, .mark::after { content: ""; position: absolute; background: #0b0f0e; }
+    .mark::before { left: 16px; right: 16px; top: 30px; height: 4px; border-radius: 2px; }
+    .mark::after { width: 6px; height: 6px; border-radius: 50%; right: 14px; top: 14px; }
+    button {
+      margin-top: 1.5rem; padding: 0.75rem 1.5rem; border-radius: 999px; border: none;
+      background: #14b8a6; color: #0b0f0e; font-weight: 600; font-size: 1rem;
+    }
+    p.status { opacity: 0.7; min-height: 1.4em; }
+  </style>
+</head>
+<body>
+  <!--
+    This is the ENTIRE pre-auth surface (section 13.1). No tile registry, no sync/crypto
+    logic beyond the WebAuthn challenge below. Tile bundles live under /app/ and are
+    session-gated server-side (section 13.2) — do not add app logic to this file.
+  -->
+  <div class="lock">
+    <div class="mark" aria-hidden="true"></div>
+    <h1>onedash</h1>
+    <p class="status" id="status">Unlock with your passkey</p>
+    <button id="unlock">Unlock</button>
+  </div>
+  <script type="module" src="/shell/auth.js"></script>
+</body>
+</html>

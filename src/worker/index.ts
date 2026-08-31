@@ -49,6 +49,10 @@ export default {
       return handleAuth(request, env, url);
     }
 
+    if (url.pathname === "/debug/client-error" && request.method === "POST") {
+      return handleClientErrorReport(request);
+    }
+
     if (url.pathname === "/sync") {
       return handleSyncUpgrade(request, env);
     }
@@ -95,6 +99,22 @@ async function serveGatedBundle(request: Request, env: Env, url: URL): Promise<R
     default:
       return new Response("not found", { status: 404 });
   }
+}
+
+/**
+ * Bring-up aid, not a product feature. The passkey ceremony runs on a phone with no
+ * console, and the interesting failures happen client-side before any session exists — so
+ * the reason gets POSTed here to land in `wrangler tail`. That makes it necessarily public
+ * and therefore spammable, hence: logs one capped string, reads nothing else, touches no
+ * binding, and returns no content.
+ *
+ * TODO: delete this route once registration and login are confirmed working on real
+ * devices. It has no place in a system whose whole premise is that the server learns as
+ * little as possible (section 1).
+ */
+async function handleClientErrorReport(request: Request): Promise<Response> {
+  console.log("client-error:", (await request.text()).slice(0, 1000));
+  return new Response(null, { status: 204 });
 }
 
 async function handleSyncUpgrade(request: Request, env: Env): Promise<Response> {

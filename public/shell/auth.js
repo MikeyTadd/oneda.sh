@@ -23,17 +23,41 @@ setupBtn.addEventListener("click", () => {
   return void setup();
 });
 
+// Which step of the ceremony we're on, so a failure says where it happened rather than
+// just what. Bring-up scaffolding, paired with the Worker's /debug/client-error route.
+let currentStep = "idle";
+function step(name) {
+  currentStep = name;
+}
+
 /** Surfaces the actual reason on screen. There's no console on a phone, and every failure
  * reading "try again" is useless when the interesting part is which step broke and why. */
 function fail(what, err) {
   const detail = err?.name ? `${err.name}: ${err.message}` : String(err);
-  statusEl.textContent = `${what} failed — ${detail}`;
-  console.error(what, err);
+  statusEl.textContent = `${what} failed at ${currentStep} — ${detail}`;
+  console.error(what, currentStep, err);
+  report(`${what} failed at step=${currentStep} :: ${detail}`);
+}
+
+/** Best-effort copy of a failure to the Worker log — the phone has no console. Never
+ * allowed to throw over the top of the failure it's reporting. */
+function report(line) {
+  try {
+    void fetch("/debug/client-error", {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: `${line} :: ua=${navigator.userAgent}`,
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    /* reporting is never the thing that breaks the page */
+  }
 }
 
 async function unlock() {
   statusEl.textContent = "Waiting for Face ID…";
   try {
+    step("login/start");
     const optionsRes = await fetch("/auth/login/start", { method: "POST", credentials: "include" });
     if (!optionsRes.ok) throw new Error(`login/start returned ${optionsRes.status}`);
     const options = await optionsRes.json();
@@ -51,13 +75,16 @@ async function unlock() {
       extensions: { prf: { eval: { first: PRF_SALT } } },
     };
 
+    step("credentials.get");
     const assertion = await navigator.credentials.get({ publicKey });
     if (!assertion) throw new Error("cancelled");
 
+    step("read-prf-result");
     const extResults = assertion.getClientExtensionResults();
     const prfOutput = extResults.prf?.results?.first;
     if (!prfOutput) throw new Error("this passkey/browser didn't return a PRF result");
 
+    step("login/finish");
     const finishRes = await fetch("/auth/login/finish", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -69,11 +96,14 @@ async function unlock() {
     }
     const { wrappedDek } = await finishRes.json();
 
+    step("derive-master-key");
     const masterKey = await deriveMasterKeyFromPrf(prfOutput);
+    step("unwrap-dek");
     const { iv, ciphertext } = splitIvAndCiphertext(base64UrlToBuffer(wrappedDek));
     const dek = await unwrapDek(ciphertext, iv, masterKey);
 
     statusEl.textContent = "Unlocked — loading…";
+    step("load-app-bundle");
     const app = await import("/app/main.js");
     await app.start({ dek });
   } catch (err) {
@@ -84,6 +114,7 @@ async function unlock() {
 async function setup() {
   statusEl.textContent = "Setting up your passkey…";
   try {
+    step("register/start");
     const startRes = await fetch("/auth/register/start", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -112,10 +143,14 @@ async function setup() {
       extensions: { prf: { eval: { first: PRF_SALT } } },
     };
 
+    step("credentials.create");
     const credential = await navigator.credentials.create({ publicKey });
     if (!credential) throw new Error("cancelled");
 
-    const prfOutput = credential.getClientExtensionResults()?.prf?.results?.first;
+    step("read-prf-from-create");
+    const ext = credential.getClientExtensionResults() ?? {};
+    const prfOutput = ext.prf?.results?.first;
+    report(`create() ok :: prf=${JSON.stringify(ext.prf ?? null)} :: haveOutput=${!!prfOutput}`);
     if (prfOutput) {
       await completeSetup(credential, prfOutput);
       return;
@@ -125,6 +160,7 @@ async function setup() {
     // its own user activation. Safari treats the tap as spent by create() and rejects a
     // WebAuthn call made straight after it (NotAllowedError), so the second ceremony has to
     // be a real tap rather than something chained onto this one.
+    step("awaiting-confirm-tap");
     pendingCredential = credential;
     setupBtn.textContent = "Confirm with Face ID";
     setupBtn.className = "";
@@ -139,6 +175,7 @@ async function confirmSetup() {
   statusEl.textContent = "Waiting for Face ID…";
   try {
     const credential = pendingCredential;
+    step("prf-second-ceremony");
     const prfOutput = await getPrfOutput(credential.rawId);
     await completeSetup(credential, prfOutput);
   } catch (err) {
@@ -150,10 +187,14 @@ async function confirmSetup() {
  * both with the server. The DEK is generated here and the server only ever sees it
  * wrapped (section 2.3). */
 async function completeSetup(credential, prfOutput) {
+  step("derive-master-key");
   const masterKey = await deriveMasterKeyFromPrf(prfOutput);
+  step("generate-dek");
   const dek = await generateDek();
+  step("wrap-dek");
   const { iv, ciphertext } = await wrapDek(dek, masterKey);
 
+  step("register/finish");
   const finishRes = await fetch("/auth/register/finish", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -170,6 +211,7 @@ async function completeSetup(credential, prfOutput) {
 
   pendingCredential = null;
   statusEl.textContent = "Set up — loading…";
+  step("load-app-bundle");
   const app = await import("/app/main.js");
   await app.start({ dek });
 }

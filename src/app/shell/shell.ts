@@ -198,7 +198,7 @@ let lastSyncedAt: number | null = null;
 function syncStatusLine(syncQueue: SyncQueue): HTMLElement {
   const dot = el("span.ss-dot");
   const text = el("span.ss-text", { text: "" });
-  const now = el("button.chip.act.ss-now", { type: "button", text: "Sync now", onClick: () => void syncQueue.flush() });
+  const now = el("button.chip.act.ss-now", { type: "button", text: "Sync now", onClick: () => syncQueue.reconnectNow() });
   return el("div.ss-line#sync-status", {}, [dot, text, now]);
 }
 
@@ -206,7 +206,6 @@ function paintSyncStatus(): void {
   const line = document.getElementById("sync-status");
   if (!line) return;
   const text = line.querySelector(".ss-text");
-  const now = line.querySelector<HTMLButtonElement>(".ss-now");
 
   let label: string;
   let bad = false;
@@ -223,7 +222,8 @@ function paintSyncStatus(): void {
 
   line.classList.toggle("bad", bad);
   if (text) text.textContent = label;
-  if (now) now.disabled = pendingWrites === 0 || connectionStatus !== "connected";
+  // The button itself is never disabled here — see reconnectNow's own doc comment
+  // (sync/queue.ts) for why a greyed-out "Sync now" would be exactly backwards.
 }
 
 function relativeShort(at: number): string {

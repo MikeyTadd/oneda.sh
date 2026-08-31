@@ -32,6 +32,11 @@ export interface SyncQueue {
    * this to distinguish "still saving" from "sent", not from "the server has definitely
    * durably stored it". Called on every change, and once immediately with the current value. */
   onPendingChange(handler: (count: number) => void): void;
+  /** The shell's manual "Sync now" button (never disabled — a button that's greyed out
+   * exactly when there'd be a reason to press it isn't one). Flushes anything queued if the
+   * socket is already up; if it isn't, resets the backoff and reconnects immediately rather
+   * than making the reader wait out however long the last attempt had backed off to. */
+  reconnectNow(): void;
 }
 
 /** Wraps a WebSocket connection to the user's Durable Object (section 3.1). Reconnection
@@ -134,11 +139,14 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
     clearPongTimer();
   }
 
-  /** Only beats while the app is actually in front of someone. A backgrounded
-   * PWA has its timers throttled to the point where a missed pong would say more
-   * about iOS than about the connection, and waking the radio to prove a socket
-   * nobody is watching is exactly the battery cost not to pay. Coming back to the
-   * foreground pings immediately, which is when the answer actually matters. */
+  /** Keeps beating whether or not the app is in front of someone. It used to stop while
+   * hidden, on the theory that a missed pong there would say more about iOS throttling than
+   * the connection — but the actual effect was worse: no ping means no traffic at all, and a
+   * socket with nothing crossing it for a few minutes is exactly what an idle connection
+   * timeout (Cloudflare's edge included) is watching for. The visible symptom was a socket
+   * that looked "connected" for as long as no one was looking at the tab, then turned out to
+   * have been closed the whole time the moment something tried to use it. A throttled
+   * background timer firing late is still traffic; a timer that never fires at all is not. */
   function startHeartbeat(): void {
     stopHeartbeat();
     pingTimer = setInterval(ping, PING_EVERY_MS);
@@ -146,7 +154,6 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
 
   function ping(): void {
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    if (document.visibilityState !== "visible") return;
     // Already waiting on one; a second would only reset the deadline it is meant
     // to enforce.
     if (pongTimer !== null) return;
@@ -221,6 +228,15 @@ export function createSyncQueue(socketUrl: string): SyncQueue {
     onPendingChange(handler) {
       pendingHandlers.push(handler);
       handler(pending.length);
+    },
+    reconnectNow() {
+      if (socket && socket.readyState === WebSocket.OPEN) {
+        void flush();
+        ping();
+        return;
+      }
+      retryMs = RETRY_MIN_MS;
+      connect();
     },
   };
 }

@@ -4926,6 +4926,12 @@ a.t-row:hover {
     align-items: center;
     gap: 10px;
   }
+  /* Anchored to the row's right edge rather than just sitting next to the connection chip:
+     the chip's label changes width ("Connected" vs "Connecting" vs "Not connected"), which
+     otherwise shoves this button sideways every time the connection state changes. */
+  .rail-brand .lock-now {
+    margin-left: auto;
+  }
   .rail-brand .mark {
     width: 20px;
     height: 20px;
@@ -5134,14 +5140,40 @@ a.t-row:hover {
     min-width: 20px;
   }
 
-  #views {
-    padding: 0;
+  /* Genuinely viewport-bounded, not just "at least" it (the base rule, min-height: 100dvh,
+     lets it grow taller to fit content — exactly what every other screen's whole-page-scroll
+     depends on, so this only overrides it at desktop width). Without a real ceiling here,
+     nothing below it in the flex chain — #views' flex: 1, .view.active's own — has an actual
+     height to fill; each one just falls back to sizing itself by content anyway, and the
+     browser window ends up scrolling the whole page again regardless of how many "fill the
+     parent" rules the chain has. */
+  #shell-main {
+    height: 100dvh;
   }
 
+  #views {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* `flex: 1` (not just a flex column) so the active view actually fills the space below the
+     bar instead of shrinking to its own content height — without this, a view whose content
+     is shorter than the viewport (Notes' editor, mostly empty on a short note) sized itself
+     by content alone, and grew *downward* as more was typed instead of being a fixed pane
+     with its own scroll. `overflow-y: auto` is what makes that safe for every other screen
+     too: a view taller than the viewport (Settings' block, easily 1000px+) now scrolls
+     inside this box instead of the whole page growing to fit it — the same visible result,
+     just contained, which is what a fixed-height sibling next to it (Notes' own internal
+     panes) needs to be possible at all. */
   .view.active {
     display: flex;
     flex-direction: column;
+    flex: 1;
     min-height: 0;
+    overflow-y: auto;
   }
 
   .split {
@@ -5159,11 +5191,20 @@ a.t-row:hover {
      padding at all, reading as part of the bar rather than the first thing on the screen —
      the exact failure mode the comment above this media query catalogues for every other
      screen `.split > .main-col` already covers. */
+  /* `flex: 1; min-height: 0` matter only for a "full"-layout tile's `.main-col` (the bare,
+     registry.ts-wrapped kind, a direct flex child of `.view.active` — see that rule's own
+     comment): without them it sized itself to content like everything nested inside it, and
+     `.view.active`'s own overflow-y: auto ended up the only thing that ever scrolled,
+     dragging Notes' sidebar and header along with the body text instead of leaving them
+     pinned while just the list/body scrolled. A no-op for the ordinary `.split > .main-col`
+     case (a grid item, where `flex` does nothing) — `min-height: 0` there is harmless too. */
   .main-col {
     padding: 22px 24px 40px;
     min-width: 0;
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 0;
     gap: 20px;
   }
 
@@ -11602,12 +11643,25 @@ button.row.as-button {
   border-top: 0;
 }
 @media (min-width: 900px) {
+  /* Narrower than --side-w (380px, Settings' own side column): that width earns its keep
+     holding paragraph text (About's blurb, a device's cached-data note); a folder tree and a
+     list of note titles is short names, one per line, and 380px of them read as mostly empty
+     margin next to a name. */
   .notes-split {
-    grid-template-columns: var(--side-w) minmax(0, 1fr);
+    grid-template-columns: 260px minmax(0, 1fr);
   }
+  /* The missing link that let a long note or list drag the whole page into one scrollbar:
+     `.side`/`.main-col` are grid items here (`.notes-split` is `display: grid`), and a grid
+     item's default min-height is `auto` — tall enough to fit its content, whatever that
+     takes, rather than the row's actual height. That let `.notes-sidebar`/`.notes-main` grow
+     past the view's height instead of staying put and letting `.notes-list`/`.note-body`
+     (each already `flex: 1; min-height: 0; overflow-y: auto`) do the actual scrolling — so
+     "New note" ended up wherever the sidebar's full content height happened to put it,
+     sometimes off-screen, instead of pinned to the bottom of a fixed-height pane. */
   .notes-split[data-view] .notes-sidebar,
   .notes-split[data-view] .notes-main {
     display: flex;
+    min-height: 0;
   }
   .notes-sidebar {
     border-left: 0;
@@ -11686,6 +11740,18 @@ button.row.as-button {
   margin: auto;
 }
 
+/* Reading/writing width, not the full main column — a `.main-col` on a wide desktop is
+   easily 900px+, and prose stretched edge to edge across that is uncomfortable to write in,
+   the same reason a book page isn't as wide as the desk it sits on. Applies to the head and
+   the editor host both, so the title lines up directly above the text it titles rather than
+   spanning wider than it. */
+.notes-main-head,
+.notes-editor-host {
+  width: 100%;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
 .notes-main-head {
   display: flex;
   align-items: center;

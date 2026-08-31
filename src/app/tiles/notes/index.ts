@@ -16,6 +16,7 @@ import {
   deleteNote,
   loadAll,
   loadNoteBody,
+  moveNote,
   renameFolder,
   saveNote,
   type NotesState,
@@ -91,6 +92,17 @@ function folderById(id: string | null): NoteFolder | undefined {
   return id ? state.folders.find((f) => f.id === id) : undefined;
 }
 
+/** Every folder, depth-first, indentation included — the flat list the "move to folder"
+ * picker (openNote) needs, since a <select> has no notion of a tree. */
+function flattenFolders(parentId: string | null = null, depth = 0): Array<{ folder: NoteFolder; depth: number }> {
+  const out: Array<{ folder: NoteFolder; depth: number }> = [];
+  for (const folder of childFolders(parentId)) {
+    out.push({ folder, depth });
+    out.push(...flattenFolders(folder.id, depth + 1));
+  }
+  return out;
+}
+
 /** Same shape as settings.ts's device/passkey rows (`.row` > icon + `.who` > `.name`/`.sub`
  * + an action cluster) — a folder or note picked from a list is the same kind of thing to
  * look at as a device or passkey picked from one, so it reuses the row this app already has
@@ -154,7 +166,10 @@ function paintSidebar(): void {
 }
 
 function breadcrumbTrail(folderId: string | null): Array<{ id: string | null; name: string }> {
-  const trail: Array<{ id: string | null; name: string }> = [{ id: null, name: "Notes" }];
+  // Not "Notes" — the bar above already names the tile (settings.ts's own rule: a screen
+  // that prints its own title under that one reads as two different things stacked), and
+  // this crumb sits one line under it.
+  const trail: Array<{ id: string | null; name: string }> = [{ id: null, name: "All notes" }];
   const chain: NoteFolder[] = [];
   let cursor = folderById(folderId);
   while (cursor) {
@@ -248,12 +263,30 @@ async function openNote(note: NoteMeta): Promise<void> {
     placeholder: "Untitled",
     oninput: () => scheduleSave(),
   });
+  // .dwell for the same compact <select> chrome the idle-lock/alert-dwell pickers already use
+  // (settings.ts) — a fresh visual style for one more small dropdown would be a third copy.
+  const moveSelect = el<HTMLSelectElement>("select.notes-move.dwell", { "aria-label": "Move to folder" });
+  moveSelect.appendChild(el("option", { value: "", text: "No folder" }));
+  for (const { folder, depth } of flattenFolders()) {
+    const option = el<HTMLOptionElement>("option", { value: folder.id, text: `${"— ".repeat(depth)}${folder.name}` });
+    if (folder.id === note.folderId) option.selected = true;
+    moveSelect.appendChild(option);
+  }
+  moveSelect.addEventListener("change", () => void moveCurrentNote(note, moveSelect.value || null));
+
   const deleteBtn = el("button.chip.act", { type: "button", text: "Delete", onClick: () => void removeNote(note) });
   const editorHost = el("div.notes-editor-host");
-  appendChildren(mainEl, el("div.notes-main-head", {}, [backBtn, titleInput, deleteBtn]), editorHost);
+  appendChildren(mainEl, el("div.notes-main-head", {}, [backBtn, titleInput, moveSelect, deleteBtn]), editorHost);
 
   const body = await loadNoteBody(ctx, note);
   editor = createNoteEditor(editorHost, body, () => scheduleSave());
+}
+
+async function moveCurrentNote(note: NoteMeta, folderId: string | null): Promise<void> {
+  const updated = await moveNote(ctx, note, folderId);
+  state.notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
+  if (currentNote?.id === updated.id) currentNote = updated;
+  paintSidebar();
 }
 
 async function removeNote(note: NoteMeta): Promise<void> {

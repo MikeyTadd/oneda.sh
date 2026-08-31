@@ -4,7 +4,7 @@
 // DEK lives in page memory, not in the service worker's scope.
 
 // Bump on any shell change — that bump is what actually ships a new shell.
-const CACHE_NAME = "onedash-shell-v4";
+const CACHE_NAME = "onedash-shell-v5";
 const SHELL_ASSETS = [
   // The lock screen is served at the scope root (public/index.html), which is what
   // manifest.json's start_url points at — not /shell/index.html.

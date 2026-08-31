@@ -58,6 +58,19 @@ width, same hairline. The only things that ever change between tiles:
   scrolling child — desktop-only, scoped under `@media (min-width: 900px)` —
   never let it change `.main-col`'s own padding or force a reading-width cap
   unless the content genuinely wants one (prose), which most tiles don't.
+- There's a separate `@media (min-width: 900px) and (max-width: 1179px)`
+  block (~line 5359) that folds a genuine right-side `.side` under `.main-col`
+  at medium widths and turns it into a two-up grid (for a settings-style pane
+  that has room to read two columns there). A tile's own side-pane class
+  (`.notes-sidebar` etc.) is still a plain `.side` underneath, so it inherits
+  this un-asked-for — it must be excluded (`.side:not(.notes-sidebar)`, and
+  `.split:not(:has(> .notes-sidebar))` for the collapse-to-one-column part)
+  the same way Notes' is. **Any new tile with its own side-pane class needs
+  the same exclusion added to that block**, or its side pane will silently
+  get a different padding and a two-up grid in that width range — this read
+  as the whole layout "jumping" while resizing the window, and was only
+  caught by sweeping computed styles across every width from 850–1500px,
+  not by eyeballing a couple of screenshots.
 
 Before touching any of `.split`/`.main-col`/`.side` in `shell.css`, read the
 existing comment block directly above those rules (~line 448) and Settings'

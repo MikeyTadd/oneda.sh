@@ -22,6 +22,7 @@ Client (PWA) <--wss--> Durable Object (per user) <---> R2 (blobs) / D1 (structur
 
 ```
 public/shell/        pre-auth PWA shell: lock screen, manifest, service worker
+public/fonts/         self-hosted Inter (no font CDN — the client never calls offsite)
 src/worker/           Cloudflare Worker: routing, WebAuthn, session gating, Cron trigger
 src/worker/durable-objects/   per-user UserSession DO — pure relay, never decrypts
 src/app/crypto/        passkey PRF -> HKDF -> DEK envelope encryption (WebCrypto)
@@ -29,6 +30,7 @@ src/app/storage/       transparent-encryption IndexedDB wrapper
 src/app/sync/          offline sync queue over the DO WebSocket
 src/app/tiles/         tile interface + registry + the reference `notes` tile
 src/app/shell/         post-auth chrome: nav ordering + editor, settings, router, layout + stylesheet, sheets, bell/toast alerts (design doc §4.4)
+licenses/              third-party licences (Inter, SIL OFL 1.1)
 migrations/            D1 schema
 docs/DESIGN.md          full technical scope document
 ```

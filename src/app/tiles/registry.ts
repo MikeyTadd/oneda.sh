@@ -52,8 +52,34 @@ export async function mountInstalledTiles(
     const section = document.createElement("section");
     section.dataset.tileId = tile.id;
     section.dataset.encryptionTier = tile.encryptionTier; // section 1b: lock icon driven by this
-    container.appendChild(section);
-    tile.render(section);
+
+    // The shell owns the frame; the tile only ever fills columns (section
+    // 4.5). Both shapes put the tile's content in a `.main-col`, so page
+    // padding and column rhythm are declared once in the stylesheet rather
+    // than by each tile — and a tile can change which layout it wants
+    // without touching any CSS.
+    const mainCol = document.createElement("div");
+    mainCol.className = "main-col";
+
+    if (tile.layout === "split") {
+      const split = document.createElement("div");
+      split.className = "split";
+      const side = document.createElement("aside");
+      side.className = "side";
+      split.appendChild(mainCol);
+      split.appendChild(side);
+      section.appendChild(split);
+      container.appendChild(section);
+      tile.render(mainCol);
+      // Mandatory for a split tile — the type makes it so, because a
+      // declared side track that nothing fills is dead space, not an
+      // absent track.
+      tile.renderSide(side);
+    } else {
+      section.appendChild(mainCol);
+      container.appendChild(section);
+      tile.render(mainCol);
+    }
 
     baseCtx.syncQueue.onIncoming((update) => {
       tile.onSync(update);

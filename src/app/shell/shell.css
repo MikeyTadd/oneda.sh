@@ -13,6 +13,22 @@
  * and layout needs, not copied from that project's stylesheet.
  */
 
+/* Inter, self-hosted. Served from our own origin by the [assets] binding
+ * (public/fonts/), never from a font CDN: the client is not allowed to
+ * make an offsite request, which is the same rule section 9e of
+ * docs/DESIGN.md applies to every other third party — and a webfont
+ * request leaks the visit to whoever serves it. `font-display: swap` so a
+ * cold load paints in the fallback rather than waiting on 48KB.
+ *
+ * The licence travels with it: licenses/Inter-OFL.txt (SIL OFL 1.1). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/inter-latin.woff2") format("woff2");
+}
+
 :root {
   color-scheme: dark;
 
@@ -76,7 +92,11 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    "Inter",
+    -apple-system,
+    system-ui,
+    sans-serif;
   /* 15px on a phone, 13px on desktop (the media query below) — F1 Apex's
    * pair. 14px here made every row a hair shorter and the whole sheet read
    * tighter than the original at the same paddings. */
@@ -664,22 +684,17 @@ html {
     min-height: 0;
   }
 
-  .split > .main-col {
+  /* On `.main-col` itself rather than on `.split > .main-col`: every view
+   * has one now, whether it is a full-width tile or a split (section 4.5),
+   * so one rule pads both and there is no view left to fall through it.
+   * This is what replaced the `:has()` fallback that guessed at the frame
+   * a tile had not declared. */
+  .main-col {
     padding: 22px 24px 40px;
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 20px;
-  }
-
-  /* In F1 Apex every screen is a `.split`, so `#views: padding 0` above is
-   * safe there. Here a tile may render straight into its view without
-   * declaring one — the reference `notes` tile does — and would then sit
-   * flush against the rail. Such a view takes the same padding the
-   * main-col would have given it. (`:has()` is already a dependency: the
-   * dialog scroll lock uses it.) */
-  .view.active:not(:has(> .split)) {
-    padding: 22px 24px 40px;
   }
 
   .side {

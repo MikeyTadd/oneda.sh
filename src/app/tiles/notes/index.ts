@@ -24,6 +24,11 @@ const notesTile: Tile = {
   dataNamespace: "notes",
   encryptionTier: "e2ee", // section 1b — green lock, never leaves the client unencrypted
   layoutHint: "neutral", // section 14
+  // Section 4.5. A list of notes has nothing a side track would carry, so
+  // it takes the full width rather than declaring a column it would leave
+  // empty. Stated rather than left to the default, since it is a design
+  // decision about this screen and not an oversight.
+  layout: "full",
 
   async init(tileCtx: TileContext) {
     ctx = tileCtx;

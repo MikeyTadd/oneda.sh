@@ -3,8 +3,16 @@
 // (still encrypted) update. Decryption happens in the app context, not here, since the
 // DEK lives in page memory, not in the service worker's scope.
 
-const CACHE_NAME = "onedash-shell-v1";
-const SHELL_ASSETS = ["/shell/index.html", "/shell/auth.js", "/shell/manifest.json"];
+// Bump on any shell change — that bump is what actually ships a new shell.
+const CACHE_NAME = "onedash-shell-v2";
+const SHELL_ASSETS = [
+  "/shell/index.html",
+  "/shell/auth.js",
+  "/shell/manifest.json",
+  // Self-hosted Inter. In the precache so the lock screen renders in the
+  // app's own type offline, not the system fallback.
+  "/fonts/inter-latin.woff2",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)));

@@ -13,14 +13,29 @@ const statusEl = document.getElementById("status");
 const unlockBtn = document.getElementById("unlock");
 const setupBtn = document.getElementById("setup");
 
+// Set when a passkey has been created but its PRF output still has to be fetched by a
+// second ceremony — see setup(). Holds the credential between the two taps.
+let pendingCredential = null;
+
 unlockBtn.addEventListener("click", () => void unlock());
-setupBtn.addEventListener("click", () => void setup());
+setupBtn.addEventListener("click", () => {
+  if (pendingCredential) return void confirmSetup();
+  return void setup();
+});
+
+/** Surfaces the actual reason on screen. There's no console on a phone, and every failure
+ * reading "try again" is useless when the interesting part is which step broke and why. */
+function fail(what, err) {
+  const detail = err?.name ? `${err.name}: ${err.message}` : String(err);
+  statusEl.textContent = `${what} failed — ${detail}`;
+  console.error(what, err);
+}
 
 async function unlock() {
   statusEl.textContent = "Waiting for Face ID…";
   try {
     const optionsRes = await fetch("/auth/login/start", { method: "POST", credentials: "include" });
-    if (!optionsRes.ok) throw new Error("could not start login");
+    if (!optionsRes.ok) throw new Error(`login/start returned ${optionsRes.status}`);
     const options = await optionsRes.json();
 
     const publicKey = {
@@ -49,7 +64,9 @@ async function unlock() {
       body: JSON.stringify(serializeAssertion(assertion)),
       credentials: "include",
     });
-    if (!finishRes.ok) throw new Error("verification failed");
+    if (!finishRes.ok) {
+      throw new Error(`server returned ${finishRes.status}: ${(await finishRes.text()).slice(0, 120)}`);
+    }
     const { wrappedDek } = await finishRes.json();
 
     const masterKey = await deriveMasterKeyFromPrf(prfOutput);
@@ -60,8 +77,7 @@ async function unlock() {
     const app = await import("/app/main.js");
     await app.start({ dek });
   } catch (err) {
-    statusEl.textContent = "Unlock failed — try again";
-    console.error(err);
+    fail("Unlock", err);
   }
 }
 
@@ -75,7 +91,11 @@ async function setup() {
       credentials: "include",
     });
     if (!startRes.ok) {
-      throw new Error(startRes.status === 403 ? "an account already exists on this server" : "could not start setup");
+      throw new Error(
+        startRes.status === 403
+          ? "an account already exists on this server"
+          : `register/start returned ${startRes.status}`
+      );
     }
     const options = await startRes.json();
 
@@ -87,38 +107,71 @@ async function setup() {
         ...c,
         id: base64UrlToBuffer(c.id),
       })),
+      // Ask for the PRF output up front. Where the authenticator obliges (iOS 18+, Chrome)
+      // that's the whole ceremony in one prompt and one tap.
+      extensions: { prf: { eval: { first: PRF_SALT } } },
     };
 
     const credential = await navigator.credentials.create({ publicKey });
     if (!credential) throw new Error("cancelled");
 
-    // Not every authenticator returns the PRF *output* from create() even when it reports
-    // `prf.enabled`, so do a follow-up get() against the credential we just made to obtain
-    // it — the same pattern src/app/crypto/keys.ts's deriveMasterKey() uses for login.
-    const prfOutput = await getPrfOutput(credential.rawId);
-    const masterKey = await deriveMasterKeyFromPrf(prfOutput);
-    const dek = await generateDek();
-    const { iv, ciphertext } = await wrapDek(dek, masterKey);
+    const prfOutput = credential.getClientExtensionResults()?.prf?.results?.first;
+    if (prfOutput) {
+      await completeSetup(credential, prfOutput);
+      return;
+    }
 
-    const finishRes = await fetch("/auth/register/finish", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        response: serializeAttestation(credential),
-        deviceLabel: guessDeviceLabel(),
-        wrappedDek: bufferToBase64Url(concatBytes(iv, new Uint8Array(ciphertext))),
-      }),
-      credentials: "include",
-    });
-    if (!finishRes.ok) throw new Error("setup failed");
-
-    statusEl.textContent = "Set up — loading…";
-    const app = await import("/app/main.js");
-    await app.start({ dek });
+    // No PRF output from create(), so it takes a second ceremony to fetch — and that needs
+    // its own user activation. Safari treats the tap as spent by create() and rejects a
+    // WebAuthn call made straight after it (NotAllowedError), so the second ceremony has to
+    // be a real tap rather than something chained onto this one.
+    pendingCredential = credential;
+    setupBtn.textContent = "Confirm with Face ID";
+    setupBtn.className = "";
+    statusEl.textContent = "Passkey created. One more step to derive your key.";
   } catch (err) {
-    statusEl.textContent = "Setup failed — try again";
-    console.error(err);
+    fail("Setup", err);
   }
+}
+
+/** Second half of setup, on its own tap (see setup()). */
+async function confirmSetup() {
+  statusEl.textContent = "Waiting for Face ID…";
+  try {
+    const credential = pendingCredential;
+    const prfOutput = await getPrfOutput(credential.rawId);
+    await completeSetup(credential, prfOutput);
+  } catch (err) {
+    fail("Setup", err);
+  }
+}
+
+/** Derives the master key from the PRF output, wraps a fresh DEK under it, and registers
+ * both with the server. The DEK is generated here and the server only ever sees it
+ * wrapped (section 2.3). */
+async function completeSetup(credential, prfOutput) {
+  const masterKey = await deriveMasterKeyFromPrf(prfOutput);
+  const dek = await generateDek();
+  const { iv, ciphertext } = await wrapDek(dek, masterKey);
+
+  const finishRes = await fetch("/auth/register/finish", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      response: serializeAttestation(credential),
+      deviceLabel: guessDeviceLabel(),
+      wrappedDek: bufferToBase64Url(concatBytes(iv, new Uint8Array(ciphertext))),
+    }),
+    credentials: "include",
+  });
+  if (!finishRes.ok) {
+    throw new Error(`server returned ${finishRes.status}: ${(await finishRes.text()).slice(0, 120)}`);
+  }
+
+  pendingCredential = null;
+  statusEl.textContent = "Set up — loading…";
+  const app = await import("/app/main.js");
+  await app.start({ dek });
 }
 
 // --- WebAuthn PRF -> master key -> DEK (mirrors src/app/crypto/keys.ts) ---

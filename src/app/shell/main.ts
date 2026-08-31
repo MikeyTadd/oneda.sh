@@ -19,7 +19,10 @@ export interface StartOptions {
 
 export async function start({ dek }: StartOptions): Promise<void> {
   const storage = createEncryptedStorage(dek);
-  const syncQueue = createSyncQueue(`wss://${location.host}/sync`);
+  // Follow the page's own scheme rather than hardcoding wss: — over plain http (a local
+  // `wrangler dev` run) a wss: URL fails the TLS handshake and the sync socket never opens.
+  const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+  const syncQueue = createSyncQueue(`${wsScheme}://${location.host}/sync`);
 
   await mountShell(document.body, { storage, syncQueue });
 

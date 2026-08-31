@@ -54,6 +54,21 @@ function report(line) {
   }
 }
 
+// Bring-up: report what this browser claims it supports, on load and without any ceremony.
+// The same flow completes against a PRF-capable authenticator, so when a device returns no
+// PRF result this is what distinguishes "won't" from "asked wrongly". Goes with the rest of
+// the /debug/client-error scaffolding.
+void (async () => {
+  try {
+    const caps = PublicKeyCredential.getClientCapabilities
+      ? await PublicKeyCredential.getClientCapabilities()
+      : null;
+    report(`capabilities :: prf=${caps ? caps["extension:prf"] : "getClientCapabilities unavailable"} :: ${JSON.stringify(caps)}`);
+  } catch (err) {
+    report(`capabilities threw :: ${err?.name}: ${err?.message}`);
+  }
+})();
+
 async function unlock() {
   statusEl.textContent = "Waiting for Face ID…";
   try {

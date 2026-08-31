@@ -25,7 +25,23 @@ const REGISTRY_KEY = "shell:tile-registry";
 
 export async function loadRegistry(ctx: TileContext): Promise<TileRegistryEntry[]> {
   const entries = await ctx.storage.get<TileRegistryEntry[]>(REGISTRY_KEY);
-  if (entries) return entries;
+
+  if (entries) {
+    // A tile added to TILE_LOADERS after this account's registry was already saved (Library,
+    // joining an account that only ever knew about home/notes) has no entry here yet — unlike
+    // nav.ts's own order(), which repairs a saved nav order against the current tile list on
+    // every load, this had no equivalent repair, so a newly-shipped tile was invisible to any
+    // existing account until deleting and rebuilding its whole registry by hand. Appended at
+    // the end, in TILE_LOADERS' own order, the same place order() puts a tile nobody has
+    // arranged yet.
+    const known = new Set(entries.map((e) => e.tileId));
+    const missing = Object.keys(TILE_LOADERS).filter((id) => !known.has(id));
+    if (missing.length === 0) return entries;
+    const nextOrder = entries.length === 0 ? 0 : Math.max(...entries.map((e) => e.order)) + 1;
+    const repaired = [...entries, ...missing.map((tileId, i) => ({ tileId, order: nextOrder + i }))];
+    await saveRegistry(ctx, repaired);
+    return repaired;
+  }
 
   // Nothing saved yet, anywhere — not "every tile was removed" (that state is an explicit
   // empty array, synced like any other write) but "this account has never had a registry at

@@ -1,9 +1,11 @@
-// App-level re-auth (design doc section 1a): a fresh passkey prompt on every return to the
-// foreground, and after a configurable idle timeout while the app is open — independent of
-// whether the phone itself is unlocked. The threat this defends is explicit in the doc: a
-// phone left unlocked, or handed to someone, still shouldn't show decrypted content without
-// this separate prompt. It is not optional the way a preference usually is; only its idle
-// timeout (prefs.ts's reauthIdleMs) is.
+// App-level re-auth (design doc section 1a): a fresh passkey prompt after the app has been
+// hidden or idle for reauthIdleMs — independent of whether the phone itself is unlocked. The
+// threat this defends is explicit in the doc: a phone left unlocked, or handed to someone,
+// still shouldn't show decrypted content without this separate prompt. Whether it fires at
+// all is not optional; only its idle timeout (prefs.ts's reauthIdleMs) is, and that timeout
+// applies uniformly to sitting idle in the open app AND to being hidden — a one-second alt-tab
+// and an hour in another app both go through the same clock rather than the first being
+// treated as if it were the second.
 //
 // This never touches the DEK or re-derives anything — main.ts already holds a working DEK
 // for the rest of the session. All this proves is "the passkey is still present", via a bare
@@ -23,6 +25,11 @@ const SHELL_ID = "shell";
 let armed = false;
 let idleMs = 60_000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
+// Set the moment the tab goes hidden, cleared the moment it doesn't matter any more (back
+// visible, or already locked). Lets a return-to-foreground be judged by the same idle clock
+// as sitting idle in the open app, instead of an unconditional lock that punished a one-second
+// alt-tab exactly as hard as an hour away.
+let hiddenAt: number | null = null;
 
 /** Call once, after the shell has mounted — arming this before the reader has even seen the
  * app once would just relock what unlock() already unlocked seconds ago. `getIdleMs` is read
@@ -35,11 +42,16 @@ export function installReauthGate(getIdleMs: () => number): void {
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") {
-      // No point counting idle time nobody could be spending — the clock restarts
-      // from a real interaction once the reader is back and has proven it's them.
+      // The setTimeout underneath would drift or get throttled while hidden anyway (mobile
+      // Safari especially), so the elapsed time is measured from this timestamp on return
+      // rather than trusted to have kept firing accurately in the background.
+      hiddenAt = Date.now();
       clearIdleTimer();
     } else {
-      lock();
+      const elapsed = hiddenAt !== null ? Date.now() - hiddenAt : 0;
+      hiddenAt = null;
+      if (elapsed >= idleMs) lock();
+      else armIdleTimer(idleMs - elapsed);
     }
   });
 
@@ -47,13 +59,39 @@ export function installReauthGate(getIdleMs: () => number): void {
     document.addEventListener(evt, () => resetIdleTimer(getIdleMs()), { passive: true });
   }
   resetIdleTimer(idleMs);
+
+  // A manual lock for "I'm stepping away right now" — the idle timeout and the
+  // hidden-tab check both only catch it eventually, and eventually isn't the same as
+  // immediately. Matches the shortcut other password/vault apps already use (Bitwarden),
+  // rather than inventing a new one to remember. Skipped while typing anywhere, so it can't
+  // fire from a text field that happens to use the same combo for its own editing.
+  document.addEventListener("keydown", (event) => {
+    if (!event.shiftKey || (!event.ctrlKey && !event.metaKey) || event.key.toLowerCase() !== "l") return;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+    event.preventDefault();
+    lock();
+  });
+}
+
+/** Locks right now, on demand — the Settings/nav chrome's manual lock button and the keyboard
+ * shortcut above both call this rather than duplicating what "locked" means. */
+export function forceLock(): void {
+  if (armed) lock();
+}
+
+/** Arms the timer for exactly `ms` without touching the configured idleMs — used for the
+ * remainder of a budget already partly spent while hidden. A real interaction still resets
+ * to the full configured duration via resetIdleTimer below. */
+function armIdleTimer(ms: number): void {
+  if (isLocked()) return; // already waiting on a prompt; nothing to extend
+  clearIdleTimer();
+  idleTimer = setTimeout(lock, ms);
 }
 
 function resetIdleTimer(ms: number): void {
   idleMs = ms;
-  if (isLocked()) return; // already waiting on a prompt; nothing to extend
-  clearIdleTimer();
-  idleTimer = setTimeout(lock, idleMs);
+  armIdleTimer(ms);
 }
 
 function clearIdleTimer(): void {

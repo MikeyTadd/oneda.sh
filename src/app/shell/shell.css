@@ -11542,3 +11542,28 @@ button.row.as-button {
   color: var(--live-ink);
   background: color-mix(in srgb, var(--live) 20%, transparent);
 }
+
+/* The manual lock button beside each connection chip (shell.ts's lockButton). Reuses
+ * .bar-bell's own icon-button geometry (44px tap target, 19px glyph) rather than a fresh set
+ * of numbers for what is visually the same kind of control — a bare icon in the chrome. */
+.lock-now {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--n500);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -11px -6px;
+}
+.lock-now:hover {
+  color: var(--n300);
+}
+.lock-now .ico {
+  width: 17px;
+  height: 17px;
+}

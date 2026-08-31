@@ -225,6 +225,15 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       setSessionCookie(res.headers, token);
       return res;
     }
+    case "/auth/whoami": {
+      // Lets the pre-auth screen (src/preauth/auth.ts) tell "you've never signed in" apart
+      // from "you have a session, you're just refreshing" — the session cookie itself is
+      // HttpOnly and unreadable from that page's own JS, so it has nothing else to check
+      // this against. Deliberately answers with nothing but a boolean: this route runs
+      // before any credential ceremony, so it must never leak which account or device it is.
+      const session = await validateSession(env, extractSessionToken(request));
+      return Response.json({ authenticated: session !== null });
+    }
     case "/auth/logout": {
       // Ends this device's session and clears the cookie. What makes Settings'
       // reset honest: the cookie is HttpOnly by design, so the page cannot drop

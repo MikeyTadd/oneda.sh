@@ -39,6 +39,26 @@ setupBtn.addEventListener("click", () => {
 recoverBtn.addEventListener("click", () => showRecoverForm());
 wipeBtn.addEventListener("click", () => showWipeConfirm());
 
+// The session cookie is HttpOnly (deliberately — this page's own JS has no business reading
+// it), so this is the only way this screen can tell "you've never signed in" apart from
+// "you have a session, you're just refreshing" — a distinction worth making since unlock()
+// still has to run the full passkey ceremony either way (the DEK lives in memory only and
+// refresh always throws that away). Fire-and-forget: offline or a slow reply just leaves the
+// generic first-visit copy up rather than blocking the screen on it.
+void (async () => {
+  try {
+    const res = await fetch("/auth/whoami", { credentials: "include" });
+    if (!res.ok) return;
+    const { authenticated } = (await res.json()) as { authenticated: boolean };
+    if (authenticated) {
+      statusEl.textContent = "Welcome back — confirm it's you";
+      setupBtn.hidden = true;
+    }
+  } catch {
+    // No signal either way — leave the generic copy.
+  }
+})();
+
 // Which step of the ceremony we're on, so a failure says where it happened rather than just
 // what — the difference between "Setup failed" and "failed at credentials.create", which is
 // the whole diagnosis when there's no console on a phone.

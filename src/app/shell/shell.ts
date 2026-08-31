@@ -20,7 +20,7 @@ import { ICONS, iconSvg } from "./icons.js";
 import { openMoreSheet, type NavEditDeps } from "./nav-edit.js";
 import { buildNav, defaultRoute, loadNavOrder, navById, order, saveNavOrder, split, type NavDestination } from "./nav.js";
 import { loadPrefs, prefs } from "./prefs.js";
-import { installReauthGate } from "./reauth.js";
+import { forceLock, installReauthGate } from "./reauth.js";
 import { renderSettings } from "./settings.js";
 import { watchForUpdates } from "./updates.js";
 
@@ -127,6 +127,18 @@ function connectionChip(where: "rail" | "appbar"): HTMLElement {
   return chip;
 }
 
+/** Locks right now, on the spot — the idle timeout and the hidden-tab check (reauth.ts) both
+ * only catch a walked-away device eventually, and stepping out mid-task shouldn't have to
+ * wait for "eventually". Sits beside the connection chip rather than in Settings, since it's
+ * the one control here you reach for on your way out the door, not while sat looking at
+ * preferences. */
+function lockButton(): HTMLElement {
+  const btn = el("button.lock-now", { type: "button", "aria-label": "Lock now", title: "Lock now (Ctrl/Cmd+Shift+L)" });
+  btn.innerHTML = iconSvg(ICONS.lock ?? "", "ico");
+  btn.addEventListener("click", () => forceLock());
+  return btn;
+}
+
 const CONNECTION_COPY: Record<SyncStatus, { cls: string; label: string }> = {
   connected: { cls: "live", label: "Connected" },
   connecting: { cls: "hold", label: "Connecting" },
@@ -150,7 +162,7 @@ function buildChrome(root: HTMLElement): void {
 
   const rail = el("nav#rail", { "aria-label": "Primary" });
   const railBrand = el("div.rail-brand");
-  appendChildren(railBrand, connectionChip("rail"));
+  appendChildren(railBrand, connectionChip("rail"), lockButton());
   appendChildren(rail, railBrand, el("div.rail-nav#rail-nav"));
 
   const railFoot = el("div.rail-foot");
@@ -175,7 +187,7 @@ function buildChrome(root: HTMLElement): void {
   const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
   const gear = el("a.bar-bell", { href: "#/settings", "aria-label": "Settings" });
   gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
-  appendChildren(appbar, who, connectionChip("appbar"), appbarBell, gear);
+  appendChildren(appbar, who, connectionChip("appbar"), lockButton(), appbarBell, gear);
   appendChildren(appbarWrap, appbar);
 
   // Desktop top bar: no gear here (Settings is a rail destination), so the

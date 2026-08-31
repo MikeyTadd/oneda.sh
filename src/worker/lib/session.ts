@@ -21,6 +21,7 @@ export interface SessionRow {
   user_id: string;
   credential_id: string;
   device_label: string;
+  device_id: string | null;
   revoked_at: number | null;
 }
 
@@ -36,21 +37,32 @@ export function extractSessionToken(request: Request): string | null {
 }
 
 /** Issues a session row for a just-verified credential and returns the raw token — callers
- * write it to the response via setSessionCookie. */
+ * write it to the response via setSessionCookie.
+ *
+ * `deviceId` is the client's own persistent identifier (localStorage, never synced — see
+ * src/preauth/auth.ts), not the credential: the same synced passkey can authenticate several
+ * physical devices, and grouping by credential would collapse them into one indistinguishable
+ * row. The upsert only touches `last_seen_at` on a repeat login from a device already known —
+ * a fresh guessed label overwriting a name the reader chose in Settings would be its own bug. */
 export async function createSession(
   env: Env,
   userId: string,
   credentialId: string,
-  deviceLabel: string
+  deviceLabel: string,
+  deviceId: string
 ): Promise<string> {
   const token = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(32)));
   const now = Date.now();
-  await env.DB.prepare(
-    `INSERT INTO sessions (token, user_id, credential_id, device_label, created_at, last_seen_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  )
-    .bind(token, userId, credentialId, deviceLabel, now, now)
-    .run();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO devices (id, user_id, label, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET last_seen_at = excluded.last_seen_at`
+    ).bind(deviceId, userId, deviceLabel, now, now),
+    env.DB.prepare(
+      `INSERT INTO sessions (token, user_id, credential_id, device_label, device_id, created_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(token, userId, credentialId, deviceLabel, deviceId, now, now),
+  ]);
   return token;
 }
 
@@ -70,7 +82,7 @@ export async function validateSession(env: Env, token: string | null): Promise<S
   if (!token) return null;
 
   const row = await env.DB.prepare(
-    `SELECT token, user_id, credential_id, device_label, revoked_at
+    `SELECT token, user_id, credential_id, device_label, device_id, revoked_at
      FROM sessions WHERE token = ?`
   )
     .bind(token)

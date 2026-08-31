@@ -137,9 +137,16 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
   switch (url.pathname) {
     case "/auth/register/start": {
       // Bootstrap-only for now: registration is open exactly until the first account
-      // exists. Adding a *second* passkey for that same account (a new device, section
-      // 2.1/9b) needs its own authenticated "add device" flow — not built yet, since there's
-      // no settings UI driving it — so it isn't gated in here.
+      // exists. This is not what stands between the account and a second device — a synced
+      // (iCloud Keychain / Google Password Manager) or cross-device-relayed (WebAuthn's own
+      // "use a passkey on another device" hybrid flow) passkey is the *same* credential_id
+      // everywhere, so ordinary login/finish already handles that with no registration
+      // involved, and recover/finish (section 2.1) handles a passkey reachable from nowhere
+      // at all. What's still missing is narrower: registering a genuinely distinct,
+      // independent passkey for a session that's already authenticated — a hardware key, or
+      // deliberately not relying on platform sync — which would need its own authenticated
+      // "add another credential" endpoint. No settings UI drives that yet, so it isn't gated
+      // in here.
       const { count } = (await env.DB.prepare(`SELECT COUNT(*) as count FROM users`).first<{ count: number }>())!;
       if (count > 0) {
         return new Response("registration is closed", { status: 403 });
@@ -162,6 +169,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const body = await request.json<{
         response: RegistrationResponseJSON;
         deviceLabel: string;
+        deviceId: string; // client-persisted, distinct from the credential (section 9b)
         wrappedDek: string; // base64url(iv[12] || AES-GCM ciphertext of the DEK) — section 2.3
         // The recovery phrase's server-side half (section 2.1/10.3). Mandatory: an account
         // with no recovery row is one bad passkey day away from permanent data loss, and
@@ -188,6 +196,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const { credential } = verification.registrationInfo;
       const userId = challengePayload.userId;
       const deviceLabel = body.deviceLabel || "Unknown device";
+      const deviceId = body.deviceId || crypto.randomUUID();
       const now = Date.now();
 
       await env.DB.batch([
@@ -210,7 +219,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         ),
       ]);
 
-      const token = await createSession(env, userId, credential.id, deviceLabel);
+      const token = await createSession(env, userId, credential.id, deviceLabel, deviceId);
       const res = Response.json({ ok: true });
       clearChallengeCookie(res.headers);
       setSessionCookie(res.headers, token);
@@ -283,6 +292,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const body = await request.json<{
         response: RegistrationResponseJSON;
         deviceLabel: string;
+        deviceId: string;
         wrappedDek: string; // the *original* DEK, re-wrapped under this new passkey's master key
       }>();
 
@@ -300,6 +310,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const { credential } = verification.registrationInfo;
       const userId = recoverySession.userId;
       const deviceLabel = body.deviceLabel || "Unknown device";
+      const deviceId = body.deviceId || crypto.randomUUID();
       const now = Date.now();
 
       // No INSERT INTO users: recovery attaches a credential to an account that already
@@ -315,7 +326,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         ).bind(credential.id, userId, toArrayBuffer(base64UrlToBytes(body.wrappedDek)), now),
       ]);
 
-      const token = await createSession(env, userId, credential.id, deviceLabel);
+      const token = await createSession(env, userId, credential.id, deviceLabel, deviceId);
       const res = Response.json({ ok: true });
       clearChallengeCookie(res.headers);
       clearRecoverySessionCookie(res.headers);
@@ -334,7 +345,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         return new Response("challenge expired or missing", { status: 400 });
       }
 
-      const body = await request.json<AuthenticationResponseJSON>();
+      const body = await request.json<AuthenticationResponseJSON & { deviceId: string; deviceLabel: string }>();
       const credRow = await env.DB.prepare(
         `SELECT id, user_id, public_key, sign_count, device_label FROM credentials WHERE id = ?`
       )
@@ -380,7 +391,9 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         .bind(credRow.user_id)
         .all<{ id: string }>();
 
-      const token = await createSession(env, credRow.user_id, credRow.id, credRow.device_label);
+      const deviceId = body.deviceId || crypto.randomUUID();
+      const deviceLabel = body.deviceLabel || "Unknown device";
+      const token = await createSession(env, credRow.user_id, credRow.id, deviceLabel, deviceId);
       const res = Response.json({
         wrappedDek: bytesToBase64Url(fromD1Blob(wrappedRow.wrapped_dek)),
         // The user handle as the authenticator knows it — the same bytes registration put in
@@ -422,23 +435,19 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
 
 interface DeviceRow {
   id: string;
-  device_label: string;
+  label: string;
   created_at: number;
-  last_seen_at: number | null;
+  last_seen_at: number;
 }
 
-/** One row per registered passkey, not per session token — a credential accumulates a new
- * session on every unlock (createSession is called from login/register/recover finish
- * alike), so grouping by credential_id is what keeps this reading as "your devices" rather
- * than "every time you've ever unlocked one of them". */
+/** One row per device (the `devices` table, section 9b) — a distinct thing from the
+ * credentials list: a synced passkey can be the identical credential on several physical
+ * devices, so grouping this by credential_id (an earlier version of this endpoint did)
+ * collapsed them into one row and showed the same label on every device that shared it.
+ * `devices.id` is the client's own persistent identifier instead, immune to that. */
 async function listDevices(env: Env, session: SessionRow): Promise<Response> {
   const rows = await env.DB.prepare(
-    `SELECT credentials.id, credentials.device_label, credentials.created_at, MAX(sessions.last_seen_at) AS last_seen_at
-     FROM credentials
-     LEFT JOIN sessions ON sessions.credential_id = credentials.id AND sessions.revoked_at IS NULL
-     WHERE credentials.user_id = ?
-     GROUP BY credentials.id
-     ORDER BY credentials.created_at ASC`
+    `SELECT id, label, created_at, last_seen_at FROM devices WHERE user_id = ? ORDER BY last_seen_at DESC`
   )
     .bind(session.user_id)
     .all<DeviceRow>();
@@ -446,15 +455,15 @@ async function listDevices(env: Env, session: SessionRow): Promise<Response> {
   return Response.json(
     rows.results.map((row) => ({
       id: row.id,
-      deviceLabel: row.device_label,
+      deviceLabel: row.label,
       createdAt: row.created_at,
       lastSeenAt: row.last_seen_at,
-      isCurrent: row.id === session.credential_id,
+      isCurrent: row.id === session.device_id,
     }))
   );
 }
 
-async function renameDevice(request: Request, env: Env, session: SessionRow, credentialId: string): Promise<Response> {
+async function renameDevice(request: Request, env: Env, session: SessionRow, deviceId: string): Promise<Response> {
   const body = await request.json<{ deviceLabel: string }>();
   const deviceLabel = (body.deviceLabel ?? "").trim().slice(0, 60);
   if (!deviceLabel) {
@@ -462,9 +471,9 @@ async function renameDevice(request: Request, env: Env, session: SessionRow, cre
   }
 
   // The `user_id` check is the ownership boundary — without it this would rename any
-  // credential on the server by id, not just the caller's own.
-  const result = await env.DB.prepare(`UPDATE credentials SET device_label = ? WHERE id = ? AND user_id = ?`)
-    .bind(deviceLabel, credentialId, session.user_id)
+  // device on the server by id, not just the caller's own.
+  const result = await env.DB.prepare(`UPDATE devices SET label = ? WHERE id = ? AND user_id = ?`)
+    .bind(deviceLabel, deviceId, session.user_id)
     .run();
   if (result.meta.changes === 0) {
     return new Response("not found", { status: 404 });
@@ -472,22 +481,22 @@ async function renameDevice(request: Request, env: Env, session: SessionRow, cre
   return Response.json({ ok: true, deviceLabel });
 }
 
-/** Revokes sessions, never the credential itself (design doc section 9b: "revoking a device
- * deletes its session token server-side" — the passkey registration stays, so a returned
- * device or a false alarm can sign back in without going through recovery again). Signing
- * out the device making this very call is allowed and does exactly what it says: the
- * response still succeeds, and the caller's own next request finds its session gone. */
-async function signOutDevice(env: Env, session: SessionRow, credentialId: string): Promise<Response> {
-  const owned = await env.DB.prepare(`SELECT id FROM credentials WHERE id = ? AND user_id = ?`)
-    .bind(credentialId, session.user_id)
+/** Revokes the device's sessions, never a credential (design doc section 9b: "revoking a
+ * device deletes its session token server-side" — a passkey that also authenticates other,
+ * still-trusted devices must not be touched by signing this one out). Signing out the device
+ * making this very call is allowed and does exactly what it says: the response still
+ * succeeds, and the caller's own next request finds its session gone. */
+async function signOutDevice(env: Env, session: SessionRow, deviceId: string): Promise<Response> {
+  const owned = await env.DB.prepare(`SELECT id FROM devices WHERE id = ? AND user_id = ?`)
+    .bind(deviceId, session.user_id)
     .first();
   if (!owned) {
     return new Response("not found", { status: 404 });
   }
 
-  await env.DB.prepare(`UPDATE sessions SET revoked_at = ? WHERE credential_id = ? AND user_id = ? AND revoked_at IS NULL`)
-    .bind(Date.now(), credentialId, session.user_id)
+  await env.DB.prepare(`UPDATE sessions SET revoked_at = ? WHERE device_id = ? AND user_id = ? AND revoked_at IS NULL`)
+    .bind(Date.now(), deviceId, session.user_id)
     .run();
 
-  return Response.json({ ok: true, signedOutSelf: credentialId === session.credential_id });
+  return Response.json({ ok: true, signedOutSelf: deviceId === session.device_id });
 }

@@ -240,12 +240,16 @@ function relativeTime(ms: number): string {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-/** Adding a device (section 2.1) has no separate ceremony of its own — the recovery phrase
- * already does exactly this job: prove ownership of the account without the passkey that
- * would normally do it, then attach a fresh one. A dedicated "invite this device" flow would
- * mean a second way to authorize a new passkey, cross-device, relayed through the server —
- * meaningfully more machinery (a live key exchange between two browsers) for a case the
- * phrase already covers. */
+/** A device row for the device list — not "add a device" itself, which needs no dedicated
+ * flow or code here at all. A passkey is the credential, not the device: iCloud Keychain /
+ * Google Password Manager sync the same credential (including whatever backs PRF) to every
+ * device signed into that account, and WebAuthn's own cross-device flow ("use a passkey on
+ * another device", the QR/hybrid transport every platform picker offers) lets a phone that
+ * does hold it answer for a browser that doesn't. Either way the server sees the identical
+ * credential_id it already has a wrapped_keys row for, so ordinary login/finish is the whole
+ * story — ../shell.ts's unlock() path, unchanged. A device only reaches recovery
+ * (src/preauth/auth.ts) when the passkey is reachable from *nowhere*: not synced, no other
+ * device to relay through. That's a strictly narrower case than "a new device". */
 function deviceRow(device: Device, onChanged: () => void): HTMLElement {
   const sub = device.lastSeenAt
     ? `Last used ${relativeTime(device.lastSeenAt)}`

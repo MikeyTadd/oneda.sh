@@ -99,7 +99,7 @@ async function unlock(): Promise<void> {
     const finishRes = await fetch("/auth/login/finish", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(serializeAssertion(assertion)),
+      body: JSON.stringify({ ...serializeAssertion(assertion), deviceId: deviceId(), deviceLabel: guessDeviceLabel() }),
       credentials: "include",
     });
     if (!finishRes.ok) {
@@ -334,6 +334,7 @@ async function registerAccount(credential: PublicKeyCredential, masterKey: Crypt
       body: JSON.stringify({
         response: serializeAttestation(credential),
         deviceLabel: guessDeviceLabel(),
+        deviceId: deviceId(),
         wrappedDek: bufferToBase64Url(concatBytes(iv, new Uint8Array(ciphertext))),
         recoverySalt: bufferToBase64Url(recoverySalt),
         recoveryWrappedDek: bufferToBase64Url(concatBytes(rIv, new Uint8Array(rCiphertext))),
@@ -559,6 +560,7 @@ async function redeemRecovery(words: string[], err: HTMLParagraphElement, btn: H
       body: JSON.stringify({
         response: serializeAttestation(credential),
         deviceLabel: guessDeviceLabel(),
+        deviceId: deviceId(),
         wrappedDek: bufferToBase64Url(concatBytes(newIv, new Uint8Array(newCiphertext))),
       }),
       credentials: "include",
@@ -641,6 +643,30 @@ function guessDeviceLabel(): string {
   if (/Macintosh/.test(ua)) return "Mac";
   if (/Android/.test(ua)) return "Android";
   return "Browser";
+}
+
+const DEVICE_ID_KEY = "onedash:device-id";
+
+/** This browser's own persistent identity, distinct from any passkey (design doc section
+ * 9b): a passkey synced via iCloud Keychain or Google Password Manager is deliberately the
+ * *same* credential on every device signed into that account, so it can never be what tells
+ * two devices apart. localStorage is per-origin-per-browser and never synced anywhere by
+ * design — that lack of sync is exactly the property this needs. Sent with every
+ * register/login/recover finish call so the server's `devices` row survives across whichever
+ * passkey happens to authenticate this browser on a given day. */
+function deviceId(): string {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    // Private mode, or storage disabled. Every visit then looks like a new device to the
+    // server, which is the honest outcome — nothing here can actually remember it.
+    return crypto.randomUUID();
+  }
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {

@@ -249,14 +249,6 @@ function accountBlock(): HTMLElement {
 function maintenanceBlock(): HTMLElement {
   const status = el("p.empty.maint-note", { text: "" });
 
-  const version = el("div.kv", {}, [el("span", { text: "Version" }), el("span.v", { text: "…" })]);
-  void shellVersion().then((v) => {
-    const slot = version.querySelector(".v");
-    // Null while the first install is still in flight, which is a real state and
-    // worth saying rather than printing a confident blank.
-    if (slot) slot.textContent = v ?? "Installing…";
-  });
-
   const check = el<HTMLButtonElement>("button.btn.ghost.wide", {
     type: "button",
     text: "Check for updates",
@@ -283,7 +275,7 @@ function maintenanceBlock(): HTMLElement {
     onClick: () => confirmReset(),
   });
 
-  return el("section.set-block", {}, [blockHead("Maintenance"), version, check, reset, status]);
+  return el("section.set-block", {}, [blockHead("Maintenance"), check, reset, status]);
 }
 
 /**
@@ -333,10 +325,23 @@ function confirmReset(): void {
 }
 
 function aboutBlock(appName: string): HTMLElement {
+  // F1 Apex's own row(k, v) (views/settings.js): `.row` with `.who .name.muted`
+  // on the left, `.val` on the right — the shape every About fact takes there,
+  // Version included.
+  const versionValue = el("span.val", { text: "…" });
+  void shellVersion().then((v) => {
+    // Null while the first install is still in flight, which is a real state and
+    // worth saying rather than printing a confident blank.
+    versionValue.textContent = v ?? "Installing…";
+  });
+
   return el("section.set-block", {}, [
     blockHead("About"),
     el("p.nav-note", {
       text: `${appName} is a personal, end-to-end encrypted dashboard. Everything you put in it is encrypted on this device before it leaves, and the server never holds a key that can read it.`,
     }),
+    el("div.rows", {}, [
+      el("div.row", {}, [el("div.who", {}, [el("div.name.muted", { text: "Version" })]), versionValue]),
+    ]),
   ]);
 }

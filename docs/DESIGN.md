@@ -305,6 +305,7 @@ Given passkeys can be registered from multiple devices (section 2.1) and a lost/
 - All subsequent API/WebSocket access from that device is validated against this session token.
 
 ### Device list & revocation
+- **Devices are named by the user, not by their user-agent.** "Personal Laptop" and "Work Laptop" are the distinction that matters when deciding what to revoke, and two Chrome-on-Mac sessions are indistinguishable otherwise. The label guessed at registration (`guessDeviceLabel()` — "iPhone", "Mac") is only a default; each row in the device list carries **Rename** beside **Sign out**, and the name is account state, so it syncs like everything else (section 1).
 - A settings screen lists all active sessions/devices tied to the account.
 - Revoking a device deletes its session token server-side — that device's next API call or WebSocket reconnect is rejected, effectively signing it out.
 - This should be usable **from any other authenticated device** — the classic "sign out a lost phone from your laptop" flow.

@@ -5356,18 +5356,25 @@ a.t-row:hover {
   }
 }
 
+/* Not `.split`/`.side` bare — `:not(.notes-sidebar)`/`:not(:has(> .notes-sidebar))` excludes
+   Notes, which keeps its own fixed --side-w column at every width from 900px up (its own
+   rule above). Without the exclusion, this range's fold-under behavior (a different padding,
+   border-top instead of border-left, a 2-up grid) bled onto Notes' sidebar too, since it's
+   still literally a `.side` underneath — a folder/note list has no "next-card" of its own to
+   read two-up, so it just looked broken, and the two different `.side` paddings switching in
+   and out across this range read as the whole layout "jumping" while resizing. */
 @media (min-width: 900px) and (max-width: 1179px) {
   /* not enough width for a side column — fold it under the main one */
-  .split {
+  .split:not(:has(> .notes-sidebar)) {
     grid-template-columns: minmax(0, 1fr);
   }
-  .side {
+  .side:not(.notes-sidebar) {
     border-left: 0;
     border-top: 1px solid var(--hairline);
     padding: 22px 24px 40px;
   }
   /* the side column's lists read better two-up at this width */
-  .side {
+  .side:not(.notes-sidebar) {
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: start;

@@ -21,3 +21,18 @@ export function bytesToBase64Url(bytes: ArrayBuffer | Uint8Array): string {
 export function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
+
+/** What a D1 BLOB column actually reads back as. Verified against the Workers binding, not
+ * assumed: D1 hands back a plain `number[]`, *not* the ArrayBuffer the column type suggests.
+ * Both forms are accepted here so this keeps working if that ever changes. */
+export type D1Blob = number[] | ArrayBuffer | Uint8Array;
+
+/** Normalises a D1 BLOB read into a Uint8Array. Always go through this rather than
+ * `new Uint8Array(row.some_blob)` — that happens to work for both shapes, but any other
+ * ArrayBuffer-shaped access (`.byteLength`, `.slice()`) silently misbehaves on a number[],
+ * so the honest type plus this one conversion point is what keeps that from biting. */
+export function fromD1Blob(value: D1Blob): Uint8Array {
+  if (value instanceof Uint8Array) return value;
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  return Uint8Array.from(value);
+}

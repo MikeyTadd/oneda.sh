@@ -17,7 +17,7 @@ import {
   type Env,
 } from "./lib/session.js";
 import { writeChallengeCookie, readChallengeCookie, clearChallengeCookie } from "./lib/challenge.js";
-import { base64UrlToBytes, bytesToBase64Url, toArrayBuffer } from "./lib/bytes.js";
+import { base64UrlToBytes, bytesToBase64Url, toArrayBuffer, fromD1Blob, type D1Blob } from "./lib/bytes.js";
 import {
   startRegistration,
   finishRegistration,
@@ -114,7 +114,7 @@ async function handleSyncUpgrade(request: Request, env: Env): Promise<Response> 
 interface CredentialRow {
   id: string;
   user_id: string;
-  public_key: ArrayBuffer;
+  public_key: D1Blob;
   sign_count: number;
   device_label: string;
 }
@@ -210,7 +210,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       try {
         verification = await finishAuthentication(env, challengePayload.challenge, body, {
           id: credRow.id,
-          publicKey: new Uint8Array(credRow.public_key),
+          publicKey: fromD1Blob(credRow.public_key),
           counter: credRow.sign_count,
         });
       } catch (err) {
@@ -223,7 +223,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
 
       const wrappedRow = await env.DB.prepare(`SELECT wrapped_dek FROM wrapped_keys WHERE credential_id = ?`)
         .bind(credRow.id)
-        .first<{ wrapped_dek: ArrayBuffer }>();
+        .first<{ wrapped_dek: D1Blob }>();
       if (!wrappedRow) {
         // Shouldn't happen — every credential is created alongside a wrapped_keys row in the
         // same batch above — but a device without key material can't be let past this point.
@@ -235,7 +235,7 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         .run();
 
       const token = await createSession(env, credRow.user_id, credRow.id, credRow.device_label);
-      const res = Response.json({ wrappedDek: bytesToBase64Url(wrappedRow.wrapped_dek) });
+      const res = Response.json({ wrappedDek: bytesToBase64Url(fromD1Blob(wrappedRow.wrapped_dek)) });
       clearChallengeCookie(res.headers);
       setSessionCookie(res.headers, token);
       return res;

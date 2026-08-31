@@ -44,6 +44,12 @@ export interface TileManifest {
   layoutHint?: LayoutHint;
   /** Section 4.5. Omitted means `"full"`. */
   layout?: TileLayout;
+  /** Opt-in for a tile with its own hidden-content unlock gesture that isn't a button
+   * anywhere in the interface (tiles/library) — shell.ts's nav painting attaches a 5-tap
+   * counter to this tile's own nav label when set, dispatching a `tile-tap-reveal`
+   * CustomEvent (`detail: { tileId }`) the tile listens for itself, the phone equivalent of
+   * a desktop keyboard shortcut only that tile's own module knows the meaning of. */
+  tapReveal?: boolean;
 }
 
 interface TileBase extends TileManifest {

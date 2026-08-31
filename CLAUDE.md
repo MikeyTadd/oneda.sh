@@ -27,12 +27,18 @@ width, same hairline. The only things that ever change between tiles:
 - **Right-side pane** (Settings' own layout — the default): `.side` is the second
   grid column, hairline on its left (`border-left: 1px solid var(--hairline)`).
   Desktop grid: `grid-template-columns: minmax(0, 1fr) var(--side-w);`
-- **Left-side pane** (Notes): mirror it — `.side` becomes the *first* visual
-  column via `order: -1` on the tile's own side-pane class, hairline flips to
-  `border-right`, and the grid template flips to
-  `grid-template-columns: var(--side-w) minmax(0, 1fr);`. Nothing about the base
-  `.side`/`.main-col` padding rules is touched or overridden — only column order
-  and which edge carries the hairline.
+- **Left-side pane** (Notes, Library): add the generic `.side-left` class to the
+  tile's own side-pane class (`container.classList.add("notes-sidebar",
+  "side-left")` — see `shell.css`'s own `.side-left` rule, ~line 11630) rather than
+  reimplementing the order/grid/hairline mechanics per tile. `.side-left` handles:
+  `order: -1` so it becomes the *first* visual column, the grid template flipping to
+  `var(--side-w) minmax(0, 1fr)`, the hairline flipping to `border-right`, and the
+  mobile top-clearance zeroing. Nothing about the base `.side`/`.main-col` padding
+  rules is touched or overridden — only column order and which edge carries the
+  hairline. A tile's own side-pane class still exists alongside `.side-left` for
+  its own content-specific styling (row layout, etc.) and for the phone drill-down
+  `display: none` rules, which stay tile-specific since `data-view`'s actual values
+  are chosen per tile (Notes: "list"/"editor"; Library: "list"/"files").
 - **Full width, no side pane**: use `layout: "full"` (registry.ts gives a bare
   `.main-col`, no `.split`/`.side` in the DOM at all) rather than a `"split"` tile
   with an empty/unused side.
@@ -59,18 +65,19 @@ width, same hairline. The only things that ever change between tiles:
   never let it change `.main-col`'s own padding or force a reading-width cap
   unless the content genuinely wants one (prose), which most tiles don't.
 - There's a separate `@media (min-width: 900px) and (max-width: 1179px)`
-  block (~line 5359) that folds a genuine right-side `.side` under `.main-col`
+  block (~line 5376) that folds a genuine right-side `.side` under `.main-col`
   at medium widths and turns it into a two-up grid (for a settings-style pane
-  that has room to read two columns there). A tile's own side-pane class
-  (`.notes-sidebar` etc.) is still a plain `.side` underneath, so it inherits
-  this un-asked-for — it must be excluded (`.side:not(.notes-sidebar)`, and
-  `.split:not(:has(> .notes-sidebar))` for the collapse-to-one-column part)
-  the same way Notes' is. **Any new tile with its own side-pane class needs
-  the same exclusion added to that block**, or its side pane will silently
-  get a different padding and a two-up grid in that width range — this read
-  as the whole layout "jumping" while resizing the window, and was only
-  caught by sweeping computed styles across every width from 850–1500px,
-  not by eyeballing a couple of screenshots.
+  that has room to read two columns there). It's already scoped to exclude
+  `.side-left` (`.side:not(.side-left)`, `.split:not(:has(> .side-left))`), so
+  **any tile that correctly adds `.side-left` (see above) is automatically
+  excluded here too** — no per-tile addition needed, as long as the tile
+  actually uses `.side-left` rather than reinventing the mirrored-side
+  mechanics by hand. A tile that skips `.side-left` and hand-rolls the
+  order/grid/hairline instead would silently get a different padding and a
+  two-up grid in that width range — this read as the whole layout "jumping"
+  while resizing the window the one time it happened, and was only caught by
+  sweeping computed styles across every width from 850–1500px, not by
+  eyeballing a couple of screenshots.
 
 Before touching any of `.split`/`.main-col`/`.side` in `shell.css`, read the
 existing comment block directly above those rules (~line 448) and Settings'

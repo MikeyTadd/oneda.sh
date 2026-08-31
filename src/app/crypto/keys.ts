@@ -148,3 +148,49 @@ export async function decryptText(dek: CryptoKey, ciphertext: ArrayBuffer, iv: U
   const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, dek, ciphertext);
   return new TextDecoder().decode(bytes);
 }
+
+/** Raw bytes in, raw bytes out — no JSON envelope (encryptRecord) and no UTF-8 assumption
+ * (encryptText, which would corrupt anything that isn't actually text). For a file's own
+ * bytes (tiles/library), chunked so a caller can encrypt piece by piece rather than holding
+ * an entire upload in memory as one buffer (design doc §3.3, "not as one in-memory buffer"). */
+export async function encryptBytes(key: CryptoKey, bytes: Uint8Array): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, bytes as BufferSource);
+  return { ciphertext, iv };
+}
+
+export async function decryptBytes(key: CryptoKey, ciphertext: ArrayBuffer, iv: Uint8Array): Promise<Uint8Array> {
+  const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, key, ciphertext);
+  return new Uint8Array(bytes);
+}
+
+const PASSPHRASE_PBKDF2_ITERATIONS = 600_000; // OWASP's 2023 floor for PBKDF2-SHA256 (same constant preauth/recovery.ts uses).
+
+/** A hidden library's own key, independent of the account DEK — anyone who has unlocked the
+ * app (i.e. has the DEK) still can't read a hidden library's name, file metadata, or bytes
+ * without also knowing its passphrase (design doc's "two-layer unlock", roadmap item 7).
+ * Deterministic from (passphrase, salt) so the same passphrase always re-derives the same
+ * key — nothing about the passphrase itself is ever stored, only this key's own wrapped
+ * form (tiles/library/store.ts). */
+export async function derivePassphraseKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase.normalize("NFKC")), "PBKDF2", false, [
+    "deriveKey",
+  ]);
+  return crypto.subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt: salt as BufferSource, iterations: PASSPHRASE_PBKDF2_ITERATIONS },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["wrapKey", "unwrapKey"]
+  );
+}
+
+/** A fresh random content key for one hidden library (tiles/library/store.ts) — generated
+ * once, wrapped under the library's own passphrase key (wrapDek/unwrapDek above, which are
+ * really "wrap one AES-GCM key under another" and not actually DEK-specific despite the
+ * name). Extractable only for the instant it takes to wrap; every copy the app actually
+ * holds onto afterward goes through makeNonExtractable, the same rule the DEK itself
+ * follows. */
+export async function generateContentKey(): Promise<CryptoKey> {
+  return crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+}

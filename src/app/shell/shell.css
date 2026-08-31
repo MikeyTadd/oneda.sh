@@ -4508,13 +4508,16 @@ body.theme-team {
   #view-constructor .main-col,
   #view-circuit .main-col,
   #view-news .main-col,
-  /* Home (tiles/home/index.ts) and Notes (both .notes-main, the editor, and .notes-sidebar,
-     the folder/note list — "New note" now leads it) — normal registry-mounted tiles, so
-     neither has a #view-home/#view-notes id the way Settings has #view-settings (that id
-     only exists for hand-built views), addressed by class instead. */
+  /* Home, Notes and Library (tiles/*/index.ts) — normal registry-mounted tiles, so none of
+     them has a #view-home/#view-notes/#view-library id the way Settings has #view-settings
+     (that id only exists for hand-built views), addressed by class instead. Each mirrored
+     tile's own sidebar (.notes-sidebar, .library-sidebar) is included too — its own "New X"
+     button now leads that screen the same way each main column's own header does. */
   .home-main,
   .notes-main,
-  .notes-sidebar {
+  .notes-sidebar,
+  .library-main,
+  .library-sidebar {
     padding-top: var(--sp8);
   }
 
@@ -5363,25 +5366,26 @@ a.t-row:hover {
   }
 }
 
-/* Not `.split`/`.side` bare — `:not(.notes-sidebar)`/`:not(:has(> .notes-sidebar))` excludes
-   Notes, which keeps its own fixed --side-w column at every width from 900px up (its own
-   rule above). Without the exclusion, this range's fold-under behavior (a different padding,
-   border-top instead of border-left, a 2-up grid) bled onto Notes' sidebar too, since it's
-   still literally a `.side` underneath — a folder/note list has no "next-card" of its own to
-   read two-up, so it just looked broken, and the two different `.side` paddings switching in
-   and out across this range read as the whole layout "jumping" while resizing. */
+/* Not `.split`/`.side` bare — `:not(.side-left)`/`:not(:has(> .side-left))` excludes every
+   mirrored-left-side tile (Notes, Library, any future one), which keeps its own fixed
+   --side-w column at every width from 900px up (the `.side-left` rule above). Without the
+   exclusion, this range's fold-under behavior (a different padding, border-top instead of
+   border-left, a 2-up grid) bled onto that sidebar too, since it's still literally a `.side`
+   underneath — a folder/note list or a library list has no "next-card" of its own to read
+   two-up, so it just looked broken, and the two different `.side` paddings switching in and
+   out across this range read as the whole layout "jumping" while resizing. */
 @media (min-width: 900px) and (max-width: 1179px) {
   /* not enough width for a side column — fold it under the main one */
-  .split:not(:has(> .notes-sidebar)) {
+  .split:not(:has(> .side-left)) {
     grid-template-columns: minmax(0, 1fr);
   }
-  .side:not(.notes-sidebar) {
+  .side:not(.side-left) {
     border-left: 0;
     border-top: 1px solid var(--hairline);
     padding: 22px 24px 40px;
   }
   /* the side column's lists read better two-up at this width */
-  .side:not(.notes-sidebar) {
+  .side:not(.side-left) {
     display: grid;
     grid-template-columns: 1fr 1fr;
     align-items: start;
@@ -11627,24 +11631,71 @@ button.row.as-button {
   height: 17px;
 }
 
-/* ── Notes: folder tree + note list (the side) + editor (main-col) ────────
+/* ── Mirrored, left-hand side pane (any tile) ──────────────────────────────
  * The tile's own "split" layout (registry.ts) — `section > .split > .main-col
  * + aside.side`, the identical structure Settings renders into, not a second
- * one rebuilt inside it. Mirrored from Settings' own arrangement: here the
- * narrow panel is navigation (mostly names) and the wide one is content, so
- * the column order and which edge carries the hairline both flip — nothing
- * else about `.side`/`.main-col`'s own padding or proportions changes. On a
- * phone, `data-view` (tiles/notes/index.ts, set on the shared `.split`) still
- * shows one pane at a time — a folder tree and note list is real navigation
- * (drill in, then back out), not a side note the way `.split` normally
- * stacks it. On a desktop, both panes show, side by side, exactly like
- * Settings. "New note" sits above the list (.notes-sidebar-top) rather than
- * pinned to a bottom that only exists once the list is tall enough to reach
- * it — same idea as Maintenance's "Check for updates" sitting above what it
- * acts on, and it sidesteps the sidebar ever needing to grow or stick to
- * match a long note next to it. */
+ * one rebuilt inside it. Mirrored from Settings' own arrangement: a tile
+ * whose side pane is real navigation (a list of things to pick from — a
+ * folder tree, a list of libraries — not a fact box to read once) adds this
+ * class to its own `aside.side`, alongside its own tile-specific class
+ * (Notes' .notes-sidebar, Library's .library-sidebar), and the narrow panel
+ * becomes navigation while the wide one is content: the column order and
+ * which edge carries the hairline both flip — nothing else about
+ * `.side`/`.main-col`'s own padding or proportions changes. On a phone,
+ * `data-view` (set by the tile itself on the shared `.split`) still shows
+ * one pane at a time — real navigation (drill in, then back out), not a
+ * side note the way `.split` normally stacks it; each tile's own
+ * `display: none` rules for that live with its own classes further down,
+ * since the `data-view` values themselves are tile-specific. On a desktop,
+ * both panes show, side by side, exactly like Settings. A "New X" button
+ * leads the list (each tile's own equivalent of `.notes-sidebar-top`)
+ * rather than being pinned to a bottom that only exists once the list is
+ * tall enough to reach it — same idea as Maintenance's "Check for updates"
+ * sitting above what it acts on, and it sidesteps the sidebar ever needing
+ * to grow or stick to match a long item sitting in the main column beside
+ * it (Notes' own note, Library's own file list). */
+.side-left {
+  order: -1;
+}
+/* `:has()` rather than a class on `.split` itself: registry.ts builds that element and
+ * never knows which tile it belongs to, so scoping through the one child a tile actually
+ * adds (.side-left) is the only hook available without changing the shell to know about
+ * individual tiles. */
+.split:has(> .side-left) {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (min-width: 900px) {
+  /* Same --side-w Settings uses (380px) — same template, same proportions, every app. Only
+     the order flips: `order: -1` above moves .side-left into the first track, so the first
+     column has to be the narrow one for it to land in the right place. `.side`'s own 22px
+     padding and hairline border are left completely alone here — only which edge the
+     hairline sits on flips, since the narrow column is now first instead of last. */
+  .split:has(> .side-left) {
+    grid-template-columns: var(--side-w) minmax(0, 1fr);
+  }
+  .side-left {
+    border-left: 0;
+    border-right: 1px solid var(--hairline);
+  }
+}
+@media (max-width: 899px) {
+  /* `.side`'s own top margin/border (shell.css's base rule) is for the mobile-stacked case —
+     separating it from the main column sitting above it. A mirrored-left-side tile never
+     stacks the two; a phone shows exactly one pane at a time (data-view), so there is
+     nothing above it to separate from. Top padding is NOT zeroed here though — unlike the
+     base `.side` rule, whose padding-top only matters stacked under something, this sidebar
+     leads its own screen (its own "New X" button is the first thing on it) and needs the
+     same --sp8 clearance under the app bar the shared mobile-clearance list a few hundred
+     lines up already gives every tile's own main-column class. */
+  .side-left {
+    margin-top: 0;
+    border-top: 0;
+  }
+}
+
+/* ── Notes: folder tree + note list (the side) + editor (main-col) ──────── */
 /* Phone only — `data-view` is a drill-down concept (show one pane, then the other) that
- * doesn't mean anything once the desktop rule below shows both side by side regardless of
+ * doesn't mean anything once the desktop rule above shows both side by side regardless of
  * it. Without this guard, hiding one pane via display: none also removes it from the grid
  * entirely, and the surviving pane — now the *only* grid item — collapses into whichever
  * track auto-placement gives a lone item (the narrow first one, --side-w), not the width it
@@ -11656,48 +11707,25 @@ button.row.as-button {
   .split[data-view="editor"] .notes-sidebar {
     display: none;
   }
-  /* `.side`'s own top margin/border (shell.css's base rule) is for the mobile-stacked case —
-     separating it from the main column sitting above it. Notes never stacks the two; a phone
-     shows exactly one, standalone, so there is nothing above it to separate from. Top padding
-     is NOT zeroed here though — unlike the base `.side` rule, whose padding-top only matters
-     stacked under something, Notes' sidebar leads its own screen ("New note" is the first
-     thing on it) and needs the same --sp8 clearance under the app bar as .notes-main and
-     .home-main get, from the shared list a few hundred lines up. Zeroing it here after that
-     list already sets it (later in the file, so it would win) was the actual bug: "New note"
-     sat flush against the app bar's hairline exactly like .notes-main did before it got the
-     same fix. */
-  .notes-sidebar {
-    margin-top: 0;
-    border-top: 0;
-  }
-}
-.notes-sidebar {
-  order: -1;
-}
-/* `:has()` rather than a class on `.split` itself: registry.ts builds that element and
- * never knows which tile it belongs to, so scoping through the one child only Notes adds
- * (.notes-sidebar) is the only hook available without changing the shell to know about
- * individual tiles. */
-.split:has(> .notes-sidebar) {
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (min-width: 900px) {
-  /* Same --side-w Settings uses (380px) — same template, same proportions, every app. Only
-     the order flips: `order: -1` above moves .notes-sidebar into the first track, so the
-     first column has to be the narrow one for it to land in the right place. `.side`'s own
-     22px padding and hairline border are left completely alone here — only which edge the
-     hairline sits on flips, since the narrow column is now first instead of last. */
-  .split:has(> .notes-sidebar) {
-    grid-template-columns: var(--side-w) minmax(0, 1fr);
-  }
-  .notes-sidebar {
-    border-left: 0;
-    border-right: 1px solid var(--hairline);
-  }
 }
 
+/* Reused as-is by Library's own sidebar (tiles/library/index.ts) — "a button leading a
+   list" isn't Notes-specific despite the class name. */
 .notes-sidebar-top {
   margin-bottom: var(--sp3);
+}
+
+/* ── Library: library list (the side) + selected library's files (main-col) ──
+ * Same mirrored .side-left template as Notes above — a library list is exactly the same
+ * kind of navigation a folder tree is. data-view is "list" (library list shown) or "files"
+ * (a library's own files shown), Library's own equivalent of Notes' "list"/"editor". */
+@media (max-width: 899px) {
+  .split[data-view="list"] .library-main {
+    display: none;
+  }
+  .split[data-view="files"] .library-sidebar {
+    display: none;
+  }
 }
 
 .notes-sidebar-head {
@@ -11994,4 +12022,48 @@ body.is-desktop .notes-back {
 }
 .note-code:focus {
   outline: none;
+}
+
+/* A plain single-line text field — Library's search box and its passphrase prompt
+ * (tiles/library/index.ts) are the first two places in the app that need one; everything
+ * else so far has managed with a prompt(), a <select>, or a button that opens a sheet.
+ * Worth a real generic class rather than one-off styling on each: `.notes-title` is the
+ * closest existing input style but is deliberately large/title-sized, wrong for a search
+ * box or a password field. */
+.text-input {
+  width: 100%;
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+.text-input::placeholder {
+  color: var(--n600);
+}
+.text-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--n700);
+}
+
+.library-search {
+  margin-bottom: var(--sp3);
+}
+
+/* The media element inside a file's preview sheet (openPreview, tiles/library/index.ts) —
+ * capped well under the sheet's own height so a tall image or a landscape video never grows
+ * past what's comfortably visible, the same idea .note-body's max-height-free scrolling
+ * doesn't need since prose has no intrinsic size the way media does. */
+.library-preview-media {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  margin: 0 auto var(--sp3);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+img.library-preview-media {
+  object-fit: contain;
 }

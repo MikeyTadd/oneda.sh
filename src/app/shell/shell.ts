@@ -124,6 +124,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
 
   paintNav(nav, orderedIds);
   wireRouter(nav, () => orderedIds);
+  bindTapReveal(nav);
   wireLayoutSwitch();
   wireMoreSheet(navEdit);
 
@@ -389,6 +390,33 @@ function wireRouter(nav: NavDestination[], getOrder: () => string[]): void {
   window.addEventListener("hashchange", () => {
     const route = location.hash.replace(/^#\/?/, "") || defaultRoute(getOrder());
     if (navById(nav, route)) navigate(route);
+  });
+}
+
+/** The phone equivalent of a tile's own desktop keyboard shortcut for hidden content
+ * (tiles/library) — a shortcut key isn't tappable, and there's deliberately no button
+ * anywhere for this, so the one thing already on screen that names the tile becomes the
+ * gesture instead: 5 taps on its own title in the app bar, within 1.5s of each other,
+ * fires `tile-tap-reveal` (detail: { tileId }) for that tile's own module to act on. Bound
+ * once, generically, on `currentRoute` rather than per-tile — only a tile that opts in via
+ * its manifest's `tapReveal` (tiles/types.ts) is ever actually reachable this way, but the
+ * shell itself doesn't need to know what "reveal" means for it. */
+function bindTapReveal(nav: NavDestination[]): void {
+  let taps = 0;
+  let resetTimer: ReturnType<typeof setTimeout> | null = null;
+  forEachEl(document.querySelectorAll<HTMLElement>("#appbar-title, #topbar-title"), (title) => {
+    title.addEventListener("click", () => {
+      const dest = currentRoute ? navById(nav, currentRoute) : null;
+      if (!dest?.tapReveal) return;
+      taps++;
+      if (resetTimer) clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        taps = 0;
+      }, 1500);
+      if (taps < 5) return;
+      taps = 0;
+      window.dispatchEvent(new CustomEvent("tile-tap-reveal", { detail: { tileId: dest.id } }));
+    });
   });
 }
 

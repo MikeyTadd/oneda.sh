@@ -67,7 +67,7 @@ const notesTile: Tile = {
   },
 
   renderSide(container: HTMLElement) {
-    container.classList.add("notes-sidebar");
+    container.classList.add("notes-sidebar", "side-left");
     sidebarEl = container;
     shellEl = container.closest<HTMLElement>(".split");
     paintSidebar();

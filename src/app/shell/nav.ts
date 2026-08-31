@@ -29,6 +29,9 @@ export interface NavDestination {
    * nav editor — never in either nav itself, where there is no room. */
   sub?: string;
   pinned?: boolean;
+  /** Passed straight through from TileManifest — see that field's own comment
+   * (tiles/types.ts) and shell.ts's bindTapReveal. */
+  tapReveal?: boolean;
 }
 
 /**
@@ -58,7 +61,7 @@ const tierSub = (tile: TileManifest): string =>
 /** Every destination the nav can hold this session: one entry per
  * installed tile, in registry order, plus Settings. */
 export function buildNav(tiles: TileManifest[]): NavDestination[] {
-  return [...tiles.map((t) => ({ id: t.id, label: t.name, icon: t.icon, sub: tierSub(t) })), SETTINGS];
+  return [...tiles.map((t) => ({ id: t.id, label: t.name, icon: t.icon, sub: tierSub(t), tapReveal: t.tapReveal })), SETTINGS];
 }
 
 export const navById = (nav: NavDestination[], id: string): NavDestination | null =>

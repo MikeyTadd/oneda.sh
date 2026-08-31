@@ -30,6 +30,7 @@ const RAW: Record<string, string> = {
   tile: '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/>',
   folder: '<path d="M4 7.5a1 1 0 0 1 1-1h4l2 2h8a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1Z"/>',
   sync: '<path d="M4.5 12a7.5 7.5 0 0 1 12.6-5.5M19.5 12a7.5 7.5 0 0 1-12.6 5.5"/><path d="M17 4.5v3.5h-3.5M7 19.5V16h3.5"/>',
+  library: '<path d="M4 4v16M9 4v16M14 4v16"/><path d="M18 5l2.2 14.8-5 .7"/><path d="M3 20h13"/>',
   // A fingerprint rather than a key or a padlock — what the device actually asks for, and
   // what the platform's own passkey sheet shows. Lifted verbatim from F1 Apex's g-passkey
   // (public/index.html), the sibling project this design system is copied from — not

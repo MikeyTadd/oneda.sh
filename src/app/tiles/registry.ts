@@ -13,6 +13,7 @@ const TILE_LOADERS: Record<string, () => Promise<{ default: Tile }>> = {
   // insertion order) — Home is meant to be the front door, so it goes first here too.
   home: () => import("./home/index.js"),
   notes: () => import("./notes/index.js"),
+  library: () => import("./library/index.js"),
 };
 
 export interface TileRegistryEntry {

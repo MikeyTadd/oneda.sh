@@ -98,7 +98,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   wireLayoutSwitch();
   wireMoreSheet(navEdit);
 
-  await loadPrefs(deps.storage);
+  await loadPrefs(deps.storage, deps.syncQueue);
   configureAlerts({ dwellMs: prefs.alertDwellMs, toasts: prefs.alertToasts });
   window.addEventListener("prefs-changed", (event) => {
     const key = (event as CustomEvent<{ key?: string }>).detail?.key;

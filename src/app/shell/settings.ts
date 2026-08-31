@@ -381,6 +381,12 @@ function accountBlock(): HTMLElement {
     if (seconds * 1000 === prefs.reauthIdleMs) option.selected = true;
     idleSelect.appendChild(option);
   }
+  // A change made on another device arrives as an incoming sync record, not a local
+  // onChange — without this the select would keep showing the value it had when this
+  // screen was opened, even though the app underneath is already honouring the new one.
+  window.addEventListener("prefs-changed", () => {
+    idleSelect.value = String(prefs.reauthIdleMs);
+  });
 
   const deviceRows = el("div.rows", {}, [el("p.empty", { text: "Loading…" })]);
 

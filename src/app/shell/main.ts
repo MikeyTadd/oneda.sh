@@ -22,11 +22,13 @@ export async function start({ dek }: StartOptions): Promise<void> {
   // lock screen's own stylesheet must not survive into it (see below).
   await loadShellStylesheet();
 
-  const storage = createEncryptedStorage(dek);
   // Follow the page's own scheme rather than hardcoding wss: — over plain http (a local
   // `wrangler dev` run) a wss: URL fails the TLS handshake and the sync socket never opens.
   const wsScheme = location.protocol === "https:" ? "wss" : "ws";
   const syncQueue = createSyncQueue(`${wsScheme}://${location.host}/sync`);
+  // Threaded through so every put() also reaches every other device (universal sync,
+  // section 1) — see storage/db.ts.
+  const storage = createEncryptedStorage(dek, syncQueue);
 
   await mountShell(document.body, { storage, syncQueue });
   dropLockScreenStyles();

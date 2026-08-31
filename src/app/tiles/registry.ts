@@ -81,8 +81,11 @@ export async function mountInstalledTiles(
       tile.render(mainCol);
     }
 
-    baseCtx.syncQueue.onIncoming((update) => {
-      tile.onSync(update);
+    baseCtx.syncQueue.onIncoming((record) => {
+      // Every tile's onIncoming sees every record — the queue has no per-tile channel — so
+      // a record from another tile's namespace must be ignored here rather than misdelivered.
+      if (record.dataNamespace !== tile.dataNamespace) return;
+      void baseCtx.storage.receiveIncoming(record).then((value) => tile.onSync(value));
     });
   }
 }

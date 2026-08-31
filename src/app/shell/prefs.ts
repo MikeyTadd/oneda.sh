@@ -8,6 +8,7 @@
 // about the ones that do.
 
 import type { EncryptedStorage } from "../storage/db.js";
+import type { SyncQueue } from "../sync/queue.js";
 
 export interface Prefs {
   /** How long an in-app toast stays before withdrawing itself, in ms.
@@ -40,13 +41,24 @@ export const prefs: Prefs = { ...DEFAULT_PREFS };
 
 let storage: EncryptedStorage | null = null;
 
-export async function loadPrefs(store: EncryptedStorage): Promise<void> {
+export async function loadPrefs(store: EncryptedStorage, sync?: SyncQueue): Promise<void> {
   storage = store;
   const saved = await store.get<Partial<Prefs>>(PREFS_KEY);
   // Merged over the defaults rather than replacing them, so a device on an
   // older build that has never heard of a newer preference still gets its
   // default instead of `undefined`.
   Object.assign(prefs, DEFAULT_PREFS, saved ?? {});
+
+  // A preference changed on another device arrives here, not through setPref (which is
+  // only the local-write path) — without this, "no exceptions" would still have one: the
+  // device that didn't make the change.
+  sync?.onIncoming((record) => {
+    if (record.dataNamespace !== "shell" || record.recordId !== "prefs") return;
+    void storage!.receiveIncoming<Partial<Prefs>>(record).then((incoming) => {
+      Object.assign(prefs, DEFAULT_PREFS, incoming);
+      window.dispatchEvent(new CustomEvent("prefs-changed", { detail: {} }));
+    });
+  });
 }
 
 /** Writes one preference and tells the app it moved. The event carries the

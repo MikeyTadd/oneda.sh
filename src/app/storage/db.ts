@@ -4,6 +4,7 @@
 // tier distinction is only about server access, never about local storage.
 
 import { encryptRecord, decryptRecord } from "../crypto/keys.js";
+import type { SyncQueue, SyncRecord } from "../sync/queue.js";
 
 const DB_NAME = "onedash";
 const DB_VERSION = 1;
@@ -45,23 +46,59 @@ export interface EncryptedStorage {
   get<T>(key: string): Promise<T | undefined>;
   delete(key: string): Promise<void>;
   listKeys(prefix: string): Promise<string[]>;
+  /** Applies a record that arrived over the sync queue from another device: persists its
+   * ciphertext as-is (it was already encrypted under this same DEK by the sending device,
+   * so re-encrypting here would be pointless) and returns the decrypted value for whatever
+   * local code needs to react (a tile's onSync, a shell module's own change listener). Never
+   * pushes back to sync — that would echo the write straight back to its own sender. */
+  receiveIncoming<T>(record: SyncRecord): Promise<T>;
+}
+
+async function writeEnvelope(db: IDBDatabase, envelope: StoredEnvelope): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).put(envelope);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+/** Every storage key is `${dataNamespace}:${recordId}` (namespacedKey above, and every
+ * shell-level key like "shell:prefs" follows the same shape) — splitting it back apart is
+ * how put() can push a SyncRecord without every caller assembling one by hand. */
+function splitKey(key: string): { dataNamespace: string; recordId: string } {
+  const sep = key.indexOf(":");
+  if (sep === -1) return { dataNamespace: key, recordId: "" };
+  return { dataNamespace: key.slice(0, sep), recordId: key.slice(sep + 1) };
 }
 
 /** Bound to a specific DEK (obtained post-auth, section 2.3) — construct once after the
  * app-level unlock succeeds (section 1a) and hand this down via the tile shared context
- * (section 4.3), never a raw CryptoKey. */
-export function createEncryptedStorage(dek: CryptoKey): EncryptedStorage {
+ * (section 4.3), never a raw CryptoKey. `sync`, when given, makes every put() reach every
+ * other device: universal sync (section 1) with no per-call-site opt-in, since a caller
+ * that forgot to also push would be exactly the "no exceptions" clause breaking quietly. */
+export function createEncryptedStorage(dek: CryptoKey, sync?: SyncQueue): EncryptedStorage {
   return {
     async put<T>(key: string, value: T): Promise<void> {
       const db = await openDb();
       const { ciphertext, iv } = await encryptRecord(dek, value);
-      const envelope: StoredEnvelope = { key, iv, ciphertext, updatedAt: Date.now() };
-      await new Promise<void>((resolve, reject) => {
-        const tx = db.transaction(STORE, "readwrite");
-        tx.objectStore(STORE).put(envelope);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-      });
+      const updatedAt = Date.now();
+      const envelope: StoredEnvelope = { key, iv, ciphertext, updatedAt };
+      await writeEnvelope(db, envelope);
+      if (sync) sync.push({ ...splitKey(key), ciphertext, iv, updatedAt });
+    },
+
+    async receiveIncoming<T>(record: SyncRecord): Promise<T> {
+      const db = await openDb();
+      const key = namespacedKey(record.dataNamespace, record.recordId);
+      const envelope: StoredEnvelope = {
+        key,
+        iv: record.iv,
+        ciphertext: record.ciphertext,
+        updatedAt: record.updatedAt,
+      };
+      await writeEnvelope(db, envelope);
+      return decryptRecord<T>(dek, record.ciphertext, record.iv);
     },
 
     async get<T>(key: string): Promise<T | undefined> {

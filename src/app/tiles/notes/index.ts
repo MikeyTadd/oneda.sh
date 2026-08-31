@@ -71,12 +71,10 @@ const notesTile: Tile = {
 async function createNote(text: string): Promise<void> {
   const note: Note = { id: crypto.randomUUID(), text, updatedAt: Date.now() };
   notes.set(note.id, note);
-  // storage.put encrypts under the DEK transparently (section 5.1); the DEK itself lives
-  // in the shell and is never touched directly by tile code.
+  // storage.put encrypts under the DEK transparently (section 5.1) and pushes the same
+  // ciphertext to every other device over the sync queue (storage/db.ts) — one encryption
+  // call, local write and sync both handled by it.
   await ctx.storage.put(namespacedKey(ctx.dataNamespace, note.id), note);
-  // TODO: also ctx.syncQueue.push(...) with the same ciphertext once the shell threads the
-  // DEK's raw envelope (iv + ciphertext) alongside storage.put, so sync and local storage
-  // share one encryption call instead of encrypting twice.
   renderList();
 }
 

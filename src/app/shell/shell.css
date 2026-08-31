@@ -4508,7 +4508,7 @@ body.theme-team {
   #view-constructor .main-col,
   #view-circuit .main-col,
   #view-news .main-col,
-  /* Home, Notes and Library (tiles/*/index.ts) — normal registry-mounted tiles, so none of
+  /* Home, Notes and Library (each tile's own index.ts) — normal registry-mounted tiles, so none of
      them has a #view-home/#view-notes/#view-library id the way Settings has #view-settings
      (that id only exists for hand-built views), addressed by class instead. Each mirrored
      tile's own sidebar (.notes-sidebar, .library-sidebar) is included too — its own "New X"

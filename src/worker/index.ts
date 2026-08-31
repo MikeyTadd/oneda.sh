@@ -131,6 +131,7 @@ interface CredentialRow {
   public_key: D1Blob;
   sign_count: number;
   device_label: string;
+  revoked_at?: number | null;
 }
 
 async function handleAuth(request: Request, env: Env, url: URL): Promise<Response> {
@@ -223,6 +224,71 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
       const res = Response.json({ ok: true });
       clearChallengeCookie(res.headers);
       setSessionCookie(res.headers, token);
+      return res;
+    }
+    case "/auth/passkeys/add/start": {
+      // Registering a second, independent credential for an account that's already
+      // authenticated — the gap register/start's own comment calls out: ordinary login
+      // covers a synced or cross-device-relayed passkey (the same credential_id showing up
+      // on another device), but a genuinely distinct passkey (a hardware key, a second
+      // platform not sharing the first's keychain) needs its own ceremony, gated on a
+      // session rather than the bootstrap "no account yet" check.
+      const session = await validateSession(env, extractSessionToken(request));
+      if (!session) return new Response("unauthorized", { status: 401 });
+
+      const options = await startRegistration(env, session.user_id, "onedash");
+      const res = Response.json(options);
+      writeChallengeCookie(res.headers, { challenge: options.challenge, userId: session.user_id });
+      return res;
+    }
+    case "/auth/passkeys/add/finish": {
+      const session = await validateSession(env, extractSessionToken(request));
+      if (!session) return new Response("unauthorized", { status: 401 });
+
+      const challengePayload = readChallengeCookie(request);
+      if (!challengePayload?.userId || challengePayload.userId !== session.user_id) {
+        return new Response("challenge expired or missing", { status: 400 });
+      }
+
+      const body = await request.json<{
+        response: RegistrationResponseJSON;
+        deviceLabel: string;
+        // Wrapped by the client under the new passkey's own master key, from the DEK
+        // already sitting in this authenticated session's memory (section 2.3) — unlike
+        // registration or recovery, there's no fresh DEK to generate and no server-side
+        // unwrap involved, just one more wrapping of the same key.
+        wrappedDek: string;
+      }>();
+
+      let verification;
+      try {
+        verification = await finishRegistration(env, challengePayload.challenge, body.response);
+      } catch (err) {
+        console.error("add-passkey verification threw", err);
+        return new Response("verification failed", { status: 401 });
+      }
+      if (!verification.verified || !verification.registrationInfo) {
+        return new Response("verification failed", { status: 401 });
+      }
+
+      const { credential } = verification.registrationInfo;
+      const deviceLabel = body.deviceLabel || "Unknown device";
+      const now = Date.now();
+
+      // No INSERT INTO users or sessions: this only adds a second entry point to the DEK
+      // the account already has. The session making this call stays exactly as it was.
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO credentials (id, user_id, public_key, sign_count, device_label, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(credential.id, session.user_id, toArrayBuffer(credential.publicKey), credential.counter, deviceLabel, now),
+        env.DB.prepare(
+          `INSERT INTO wrapped_keys (credential_id, user_id, wrapped_dek, updated_at) VALUES (?, ?, ?, ?)`
+        ).bind(credential.id, session.user_id, toArrayBuffer(base64UrlToBytes(body.wrappedDek)), now),
+      ]);
+
+      const res = Response.json({ ok: true });
+      clearChallengeCookie(res.headers);
       return res;
     }
     case "/auth/whoami": {
@@ -362,12 +428,18 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
 
       const body = await request.json<AuthenticationResponseJSON & { deviceId: string; deviceLabel: string }>();
       const credRow = await env.DB.prepare(
-        `SELECT id, user_id, public_key, sign_count, device_label FROM credentials WHERE id = ?`
+        `SELECT id, user_id, public_key, sign_count, device_label, revoked_at FROM credentials WHERE id = ?`
       )
         .bind(body.id)
         .first<CredentialRow>();
       if (!credRow) {
         return new Response("unknown credential", { status: 401 });
+      }
+      if (credRow.revoked_at !== null && credRow.revoked_at !== undefined) {
+        // A retired passkey (POST /api/passkeys/:id/revoke) — rejected before the ceremony is
+        // even verified, same as an unknown credential, rather than let a stale passkey the
+        // reader thought they'd removed still work.
+        return new Response("credential revoked", { status: 401 });
       }
 
       let verification;
@@ -400,9 +472,9 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
 
       // Everything this account legitimately has, for the client's Signal API housekeeping
       // (section 9b): the passkey provider prunes anything it holds for us that isn't in
-      // this list. It must therefore be the complete set — a partial list would tell the
-      // keychain to delete working passkeys.
-      const accepted = await env.DB.prepare(`SELECT id FROM credentials WHERE user_id = ?`)
+      // this list. It must therefore be the complete set of *active* credentials — a revoked
+      // one is exactly what this should tell the keychain to forget, not keep offering.
+      const accepted = await env.DB.prepare(`SELECT id FROM credentials WHERE user_id = ? AND revoked_at IS NULL`)
         .bind(credRow.user_id)
         .all<{ id: string }>();
 
@@ -441,6 +513,17 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   const signoutMatch = url.pathname.match(/^\/api\/devices\/([^/]+)\/signout$/);
   if (signoutMatch?.[1] && request.method === "POST") {
     return signOutDevice(env, session, decodeURIComponent(signoutMatch[1]));
+  }
+
+  if (url.pathname === "/api/passkeys" && request.method === "GET") {
+    return listPasskeys(env, session);
+  }
+  if (url.pathname === "/api/passkeys/current/wrapped-key" && request.method === "GET") {
+    return currentWrappedKey(env, session);
+  }
+  const revokeMatch = url.pathname.match(/^\/api\/passkeys\/([^/]+)\/revoke$/);
+  if (revokeMatch?.[1] && request.method === "POST") {
+    return revokePasskey(env, session, decodeURIComponent(revokeMatch[1]));
   }
 
   // TODO: integration OAuth callbacks (section 9d), R2 upload/download proxying
@@ -514,4 +597,81 @@ async function signOutDevice(env: Env, session: SessionRow, deviceId: string): P
     .run();
 
   return Response.json({ ok: true, signedOutSelf: deviceId === session.device_id });
+}
+
+interface PasskeyRow {
+  id: string;
+  device_label: string;
+  created_at: number;
+  revoked_at: number | null;
+}
+
+/** One row per registered credential — distinct from listDevices above the same way the
+ * design doc distinguishes them: a passkey is what gets in and unwraps the DEK, a device is
+ * whatever holds the cached data, and this screen is about the former. Includes revoked
+ * passkeys (with revoked_at set) so the account keeps a record of what it retired, rather
+ * than only showing what still works. */
+async function listPasskeys(env: Env, session: SessionRow): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT id, device_label, created_at, revoked_at FROM credentials WHERE user_id = ? ORDER BY created_at DESC`
+  )
+    .bind(session.user_id)
+    .all<PasskeyRow>();
+
+  return Response.json(
+    rows.results.map((row) => ({
+      id: row.id,
+      deviceLabel: row.device_label,
+      createdAt: row.created_at,
+      revokedAt: row.revoked_at,
+      isCurrent: row.id === session.credential_id,
+    }))
+  );
+}
+
+/** The wrapped DEK for *this session's own* credential — the one piece "add a second
+ * passkey" (settings.ts) needs to re-derive an extractable copy of the DEK it can wrap under
+ * a brand-new passkey's master key: it hands back the current credential's id (so the client
+ * knows exactly which passkey to prompt for, via allowCredentials, rather than an ambiguous
+ * picker) alongside the ciphertext, never the credential's own public key or anything about
+ * other credentials on the account. */
+async function currentWrappedKey(env: Env, session: SessionRow): Promise<Response> {
+  const row = await env.DB.prepare(`SELECT wrapped_dek FROM wrapped_keys WHERE credential_id = ?`)
+    .bind(session.credential_id)
+    .first<{ wrapped_dek: D1Blob }>();
+  if (!row) {
+    return new Response("no key material for this credential", { status: 500 });
+  }
+  return Response.json({
+    credentialId: session.credential_id,
+    wrappedDek: bytesToBase64Url(fromD1Blob(row.wrapped_dek)),
+  });
+}
+
+async function revokePasskey(env: Env, session: SessionRow, credentialId: string): Promise<Response> {
+  const owned = await env.DB.prepare(`SELECT id, revoked_at FROM credentials WHERE id = ? AND user_id = ?`)
+    .bind(credentialId, session.user_id)
+    .first<{ id: string; revoked_at: number | null }>();
+  if (!owned) {
+    return new Response("not found", { status: 404 });
+  }
+  if (owned.revoked_at !== null) {
+    return Response.json({ ok: true }); // already revoked — nothing left to do
+  }
+
+  // Never leaves the account with zero working passkeys: that's not "the reader chose to lock
+  // themselves out", it's a bug, since recovery (section 2.1) exists precisely so revoking a
+  // lost passkey never has to mean losing the account, and only works if something else can
+  // still get in to *use* it. Add a second passkey first — that's what this feature is for.
+  const { count } = (await env.DB.prepare(
+    `SELECT COUNT(*) as count FROM credentials WHERE user_id = ? AND revoked_at IS NULL AND id != ?`
+  )
+    .bind(session.user_id, credentialId)
+    .first<{ count: number }>())!;
+  if (count < 1) {
+    return new Response("can't revoke your only remaining passkey", { status: 409 });
+  }
+
+  await env.DB.prepare(`UPDATE credentials SET revoked_at = ? WHERE id = ?`).bind(Date.now(), credentialId).run();
+  return Response.json({ ok: true });
 }

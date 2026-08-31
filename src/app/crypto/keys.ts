@@ -38,11 +38,11 @@ export async function deriveMasterKeyFromPrf(prfOutput: ArrayBuffer): Promise<Cr
   );
 }
 
-/** Runs its own WebAuthn PRF ceremony and derives the AES-256-GCM master key via HKDF.
- * Requires a platform authenticator with PRF extension support (section 2.1). For a caller
- * that already has a PRF output from a ceremony it ran itself, use
- * deriveMasterKeyFromPrf directly instead. */
-export async function deriveMasterKey(credentialId: BufferSource): Promise<CryptoKey> {
+/** A bare `get()` against one specific credential, for a PRF output alone — no server round
+ * trip, same shape whether it's proving an existing login (deriveMasterKey below) or
+ * completing a two-tap credential creation (add-passkey.ts, when create() itself didn't
+ * return a PRF result and a second ceremony has to fetch one). */
+export async function getPrfOutput(credentialId: BufferSource): Promise<ArrayBuffer> {
   const assertion = (await navigator.credentials.get({
     publicKey: {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
@@ -59,8 +59,15 @@ export async function deriveMasterKey(credentialId: BufferSource): Promise<Crypt
   };
   const prfOutput = extResults.prf?.results?.first;
   if (!prfOutput) throw new Error("authenticator did not return a PRF result");
+  return prfOutput;
+}
 
-  return deriveMasterKeyFromPrf(prfOutput);
+/** Runs its own WebAuthn PRF ceremony and derives the AES-256-GCM master key via HKDF.
+ * Requires a platform authenticator with PRF extension support (section 2.1). For a caller
+ * that already has a PRF output from a ceremony it ran itself, use
+ * deriveMasterKeyFromPrf directly instead. */
+export async function deriveMasterKey(credentialId: BufferSource): Promise<CryptoKey> {
+  return deriveMasterKeyFromPrf(await getPrfOutput(credentialId));
 }
 
 /** Generates a fresh random DEK (section 2.3) — call once at account setup, never again

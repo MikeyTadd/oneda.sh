@@ -11,6 +11,8 @@
 // section 13.1's gate; esbuild only pulls in what's actually imported.
 
 import { deriveMasterKeyFromPrf, generateDek, wrapDek, unwrapDek, makeNonExtractable, prfSalt } from "../app/crypto/keys.js";
+import { base64UrlToBuffer, bufferToBase64Url, concatBytes, splitIvAndCiphertext } from "../app/crypto/codec.js";
+import { guessDeviceLabel } from "../app/shell/device-label.js";
 import { generateRecoveryPhrase, verifyPhraseChecksum, deriveRecoveryEncryptionKey, deriveRecoveryAuthVerifier } from "./recovery.js";
 
 /** appendChild() in a loop, not Element.append(): this project's tsconfig pulls in
@@ -661,15 +663,6 @@ async function signalUnknownCredential(credentialId: string): Promise<void> {
   }
 }
 
-function guessDeviceLabel(): string {
-  const ua = navigator.userAgent;
-  if (/iPhone/.test(ua)) return "iPhone";
-  if (/iPad/.test(ua)) return "iPad";
-  if (/Macintosh/.test(ua)) return "Mac";
-  if (/Android/.test(ua)) return "Android";
-  return "Browser";
-}
-
 const DEVICE_ID_KEY = "onedash:device-id";
 
 /** This browser's own persistent identity, distinct from any passkey (design doc section
@@ -694,27 +687,7 @@ function deviceId(): string {
   }
 }
 
-function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
-}
-
-function splitIvAndCiphertext(buffer: ArrayBuffer): { iv: Uint8Array; ciphertext: ArrayBuffer } {
-  const bytes = new Uint8Array(buffer);
-  return { iv: bytes.slice(0, 12), ciphertext: bytes.slice(12).buffer };
-}
-
 // --- WebAuthn JSON <-> binary plumbing ---
-
-function base64UrlToBuffer(value: string): ArrayBuffer {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(value.length + ((4 - (value.length % 4)) % 4), "=");
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
 
 function serializeAssertion(assertion: PublicKeyCredential) {
   const response = assertion.response as AuthenticatorAssertionResponse;
@@ -745,11 +718,4 @@ function serializeAttestation(credential: PublicKeyCredential) {
     },
     clientExtensionResults: {},
   };
-}
-
-function bufferToBase64Url(buffer: ArrayBuffer | Uint8Array): string {
-  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }

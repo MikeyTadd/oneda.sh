@@ -12,6 +12,7 @@
 // a dead switch.
 
 import { alert } from "./alerts.js";
+import { openAddPasskeySheet } from "./add-passkey.js";
 import { appendChildren, clear, el, type ElChild } from "./dom.js";
 import { ICONS, iconSvg } from "./icons.js";
 import { openNavEditor, type NavEditDeps } from "./nav-edit.js";
@@ -87,6 +88,7 @@ export function renderSettings(container: HTMLElement, deps: SettingsDeps): void
       tilesBlock(deps.manifests),
       alertsBlock(),
       accountBlock(),
+      passkeysBlock(),
     ]);
     const side = el("aside.side", {}, [aboutBlock(deps.appName), maintenanceBlock()]);
     appendChildren(container, el("div.split", {}, [mainCol, side]));
@@ -366,6 +368,117 @@ function openSignOutConfirm(device: Device, onChanged: () => void): void {
   );
 }
 
+interface Passkey {
+  id: string;
+  deviceLabel: string;
+  createdAt: number;
+  revokedAt: number | null;
+  isCurrent: boolean;
+}
+
+/** The credentials themselves — the thing that gets into the account and unwraps the DEK
+ * (accountBlock's device list above is the separate, physical-device side of that split).
+ * Most accounts only ever need the one platform passkey login already sets up; this exists
+ * for the narrower case register/start's own comment calls out — a hardware key, or a
+ * platform that won't share the first passkey's sync — where a second, independent
+ * credential is the only way on, and revoking a lost or retired one needs somewhere to
+ * happen that isn't a device sign-out (which only ends a session, not a credential). */
+function passkeysBlock(): HTMLElement {
+  const rows = el("div.rows", {}, [el("p.empty", { text: "Loading…" })]);
+
+  const paintPasskeys = () => {
+    void fetch("/api/passkeys", { credentials: "include" })
+      .then((res) => (res.ok ? (res.json() as Promise<Passkey[]>) : Promise.reject(res.status)))
+      .then((passkeys) => {
+        clear(rows);
+        appendChildren(rows, ...passkeys.map((p) => passkeyRow(p, paintPasskeys)));
+      })
+      .catch(() => {
+        clear(rows);
+        appendChildren(rows, el("p.empty", { text: "Couldn't load your passkeys." }));
+      });
+  };
+  paintPasskeys();
+
+  const addBtn = el<HTMLButtonElement>("button.btn.ghost.wide", {
+    type: "button",
+    text: "Add a passkey",
+    onClick: () => openAddPasskeySheet(paintPasskeys),
+  });
+
+  return el("section.set-block", {}, [
+    blockHead("Passkeys"),
+    el("p.block-note", {
+      text: "What actually gets you in. Add a second one before revoking the first, the same way you'd cut a spare key before losing the original — there's always a recovery phrase behind both, but that's the fallback, not the plan.",
+    }),
+    rows,
+    el("div.maint", {}, [addBtn]),
+  ]);
+}
+
+function passkeyRow(passkey: Passkey, onChanged: () => void): HTMLElement {
+  const sub = passkey.revokedAt ? `Revoked ${relativeTime(passkey.revokedAt)}` : `Added ${relativeTime(passkey.createdAt)}`;
+
+  const nameLine = el("div.name", {}, [
+    passkey.deviceLabel,
+    passkey.isCurrent ? el("span.device-badge", { text: "Signed in with now" }) : null,
+    passkey.revokedAt ? el("span.device-badge", { text: "Revoked" }) : null,
+  ]);
+
+  const actions = passkey.revokedAt
+    ? []
+    : [el("button.chip.act", { type: "button", text: "Revoke", onClick: () => openRevokePasskeyConfirm(passkey, onChanged) })];
+
+  return el("div.row", {}, [
+    icon("device"),
+    el("div.who", {}, [nameLine, el("div.sub", { text: sub })]),
+    el("div.device-actions", {}, actions),
+  ]);
+}
+
+function openRevokePasskeyConfirm(passkey: Passkey, onChanged: () => void): void {
+  const node = openSheet("confirm", { label: "Revoke passkey" });
+  const err = el("p.err", { text: "" });
+  const go = el<HTMLButtonElement>("button.btn.go.danger", {
+    type: "button",
+    text: "Revoke",
+    onClick: async () => {
+      go.disabled = true;
+      err.textContent = "";
+      const res = await fetch(`/api/passkeys/${encodeURIComponent(passkey.id)}/revoke`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        go.disabled = false;
+        err.textContent =
+          res.status === 409
+            ? "This is your only working passkey — revoking it would lock you out. Add another one first."
+            : "Couldn't revoke that — try again.";
+        return;
+      }
+      node.close();
+      onChanged();
+    },
+  });
+
+  appendChildren(
+    node,
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Revoke passkey", passkey.deviceLabel),
+      el("div.sheet-scroll", {}, [
+        el("p.confirm-lead", {
+          text: passkey.isCurrent
+            ? `This is the passkey you're signed in with right now on this device — revoking it won't end this session, but it can't be used to log in again anywhere after this.`
+            : `"${passkey.deviceLabel}" won't be able to log in again after this. Anything already cached on a device that only had this passkey stays exactly as it was — revoking is about future logins, not existing sessions (Account, above, is where those are ended).`,
+        }),
+        err,
+      ]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), go]),
+    ])
+  );
+}
+
 function accountBlock(): HTMLElement {
   const idleSelect = el<HTMLSelectElement>("select.dwell", {
     "aria-label": "Re-lock after this much idle time",
@@ -407,7 +520,7 @@ function accountBlock(): HTMLElement {
   return el("section.set-block", {}, [
     blockHead("Account"),
     el("p.block-note", {
-      text: "Every passkey registered to this account. Renaming is just a label; signing one out ends its session without touching what it's already cached (section 9b).",
+      text: "Every device that's signed in — a synced passkey can be the same one on several of these at once, so this is about the device, not the credential (the Passkeys block below is that). Renaming is just a label; signing one out ends its session without touching what it's already cached (section 9b).",
     }),
     deviceRows,
     settingRow(

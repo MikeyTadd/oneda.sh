@@ -20,6 +20,7 @@ import { ICONS, iconSvg } from "./icons.js";
 import { openMoreSheet, type NavEditDeps } from "./nav-edit.js";
 import { buildNav, defaultRoute, loadNavOrder, navById, order, saveNavOrder, split, type NavDestination } from "./nav.js";
 import { loadPrefs, prefs } from "./prefs.js";
+import { installReauthGate } from "./reauth.js";
 import { renderSettings } from "./settings.js";
 import { watchForUpdates } from "./updates.js";
 
@@ -105,6 +106,12 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   });
   await connectAlerts(deps.storage);
   watchAlerts();
+
+  // After loadPrefs, not before: the very first idle timer this arms should already know
+  // about a saved reauthIdleMs rather than starting from the default and re-arming a moment
+  // later. Installed once the shell is actually up — arming it any earlier would relock what
+  // unlock() just unlocked.
+  installReauthGate(() => prefs.reauthIdleMs);
 
   navigate(location.hash.replace(/^#\/?/, "") || defaultRoute(orderedIds));
 }

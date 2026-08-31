@@ -223,6 +223,21 @@ function alertsBlock(): HTMLElement {
  * sign in to yet, and a "Sign in" button that cannot would be the one
  * thing on this screen that lies. */
 function accountBlock(): HTMLElement {
+  const idleSelect = el<HTMLSelectElement>("select.dwell", {
+    "aria-label": "Re-lock after this much idle time",
+    onChange: (event: Event) => setPref("reauthIdleMs", Number((event.target as HTMLSelectElement).value)),
+  });
+  for (const [seconds, label] of [
+    [30, "30 seconds"],
+    [60, "1 minute"],
+    [300, "5 minutes"],
+    [900, "15 minutes"],
+  ] as const) {
+    const option = el<HTMLOptionElement>("option", { value: String(seconds * 1000), text: label });
+    if (seconds * 1000 === prefs.reauthIdleMs) option.selected = true;
+    idleSelect.appendChild(option);
+  }
+
   return el("section.set-block", {}, [
     blockHead("Account"),
     el("div.rows", {}, [
@@ -234,6 +249,11 @@ function accountBlock(): HTMLElement {
         ]),
       ]),
     ]),
+    settingRow(
+      "Re-lock when idle",
+      "A fresh Face ID prompt after this long with nothing open, and every time you come back to the app — independent of your phone's own lock screen.",
+      idleSelect
+    ),
     el("p.nav-note", {
       text: "Signing in on a second device, the device list and remote sign-out (design doc §9b) arrive with the passkey endpoints — those still answer 501, so there is nothing here to switch on yet.",
     }),

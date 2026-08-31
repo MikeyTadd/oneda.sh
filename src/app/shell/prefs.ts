@@ -17,11 +17,19 @@ export interface Prefs {
    * bell — the record is never the thing being switched off, only the tap on
    * the shoulder. */
   alertToasts: boolean;
+  /** How long the app can sit idle in the foreground before it demands a fresh
+   * passkey prompt (reauth.ts, design doc section 1a). Only how *long*, never
+   * *whether* — the app re-locking on every return to the foreground and after
+   * this timeout is the one setting on this screen that isn't optional, since
+   * it's the thing that makes the app-level lock mean something independent of
+   * the phone's own screen lock. */
+  reauthIdleMs: number;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   alertDwellMs: 10_000,
   alertToasts: true,
+  reauthIdleMs: 60_000,
 };
 
 const PREFS_KEY = "shell:prefs";

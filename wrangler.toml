@@ -15,8 +15,11 @@ workers_dev = false
 # Everything under /app/ (tile bundles) is deliberately NOT served from here; it goes
 # through the Worker's session-gated route instead (section 13.2), so it must be built to
 # a separate output directory and served from src/worker/index.ts, not this binding.
+# Built from ./public by scripts/build-app.mjs, not served from it: the pre-auth
+# surface ships minified so an anonymous visitor gets the lock screen and nothing
+# else — no commentary on how any of it works (section 13.3).
 [assets]
-directory = "./public"
+directory = "./dist/public"
 binding = "SHELL_ASSETS"
 
 # dist/app/*.txt is the built gated bundle (`npm run build:app`, section 4.4/13.2) — a JS

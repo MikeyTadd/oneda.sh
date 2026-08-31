@@ -16,7 +16,7 @@ import type { TileManifest } from "../tiles/types.js";
 import { configureAlerts, connectAlerts } from "./alerts.js";
 import { watchAlerts } from "./bell.js";
 import { appendChildren, el, forEachEl } from "./dom.js";
-import { ICONS, iconSvg, MARK_SVG } from "./icons.js";
+import { ICONS, iconSvg } from "./icons.js";
 import { openMoreSheet, type NavEditDeps } from "./nav-edit.js";
 import { buildNav, defaultRoute, loadNavOrder, navById, order, saveNavOrder, split, type NavDestination } from "./nav.js";
 import { loadPrefs, prefs } from "./prefs.js";
@@ -58,7 +58,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   // router's fallback and the Settings screen can never drift apart.
   let orderedIds = order(saved, manifests);
 
-  buildChrome(root, orderedIds);
+  buildChrome(root);
 
   const container = document.getElementById("views")!;
   await mountInstalledTiles(container, { storage: deps.storage, syncQueue: deps.syncQueue }, registryEntries);
@@ -103,14 +103,13 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   navigate(location.hash.replace(/^#\/?/, "") || defaultRoute(orderedIds));
 }
 
-function buildChrome(root: HTMLElement, orderedIds: string[]): void {
+function buildChrome(root: HTMLElement): void {
   root.innerHTML = "";
 
   const shell = el("div#shell");
 
   const rail = el("nav#rail", { "aria-label": "Primary" });
   const railBrand = el("div.rail-brand");
-  railBrand.innerHTML = MARK_SVG;
   appendChildren(railBrand, el("span.eyebrow", { text: "oneda" }));
   appendChildren(rail, railBrand, el("div.rail-nav#rail-nav"));
 
@@ -131,14 +130,12 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   // holds however the nav order is arranged (nav.ts).
   const appbarWrap = el("div.bar-wrap#appbar-wrap");
   const appbar = el("header#appbar");
-  const brand = el("a.brand", { href: "#/" + defaultRoute(orderedIds), "aria-label": "Home" });
-  brand.innerHTML = MARK_SVG;
   const who = el("div.bar-who");
   appendChildren(who, el("span.context#appbar-context", { text: "" }), el("span.title#appbar-title", { text: "" }));
   const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
   const gear = el("a.bar-bell", { href: "#/settings", "aria-label": "Settings" });
   gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
-  appendChildren(appbar, brand, who, appbarBell, gear);
+  appendChildren(appbar, who, appbarBell, gear);
   appendChildren(appbarWrap, appbar);
 
   // Desktop top bar: no gear here (Settings is a rail destination), so the

@@ -1,0 +1,606 @@
+/* oneda shell — the post-auth chrome's design system and layout.
+ *
+ * One responsive shell, two layouts either side of 900px: a phone gets a
+ * bottom tab bar (the first BAR_SLOTS destinations, see nav.ts, plus More);
+ * a desktop gets a 220px left rail listing every destination. Both are
+ * painted from the same saved order (shell.ts's paintNav()), so the two
+ * never disagree about what "third" means.
+ *
+ * The overall shape here — token scale, the rail/tab-bar split, Settings
+ * living in fixed chrome rather than the ordered list, elevation as a
+ * hairline rather than a shadow — is adapted from a sibling project's PWA
+ * shell (F1 Apex). This file is written fresh against oneda's own palette
+ * and layout needs, not copied from that project's stylesheet.
+ */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0f0e;
+  --rail-bg: #090c0b;
+  --surface: #131a18;
+  --surface-2: #1a2321;
+  --text: #e7f3f1;
+  --text-2: #a9c2bc;
+  --text-3: #6f8a84;
+  --hairline: #1c2624;
+  --inactive: #2a3634;
+
+  --accent: #14b8a6;
+  --accent-rgb: 20, 184, 166;
+  --accent-ink: #7fe0d3; /* accent-toned body copy — kept readable on --bg */
+  --accent-deep: #0f766e; /* matches manifest.json's theme_color */
+
+  --danger: #d9534f;
+  --warn: #d0a336;
+
+  --radius-sm: 4px;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Deliberately sparse: 4/8/12/16/24/32, never 20 or 28. A gap that isn't on
+   * this list is the wrong gap — pick a neighbouring step rather than adding
+   * one, or the scale stops meaning anything. */
+  --sp1: 4px;
+  --sp2: 8px;
+  --sp3: 12px;
+  --sp4: 16px;
+  --sp6: 24px;
+  --sp8: 32px;
+
+  --shadow-sm: 0 0 0 1px var(--inactive);
+  --shadow-md:
+    0 0 0 1px var(--inactive),
+    0 6px 18px rgba(0, 0, 0, 0.5);
+
+  --rail-w: 220px;
+  --side-w: 360px;
+  --tabbar-h: 52px;
+  --gutter: 20px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* ── icons ──
+ * `.ico` carries colour and stroke only, never size — every consumer below
+ * sets its own width/height. An icon added anywhere new needs a size rule
+ * beside it, or it renders at its intrinsic size (often 0) and becomes an
+ * invisible, unhittable control. */
+.ico {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── shell grid ── */
+
+#shell {
+  display: grid;
+  grid-template-columns: 1fr;
+  min-height: 100dvh;
+}
+
+#rail {
+  display: none;
+}
+
+#shell-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100dvh;
+}
+
+/* One sticky wrapper per layout, header + a slot for a status strip beneath
+ * it, so the two can never overlap while scrolling. Only one of the two is
+ * ever painted — see the 900px switch below. */
+.bar-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+#topbar-wrap {
+  display: none;
+}
+
+/* ── phone app bar ── */
+
+#appbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp4);
+  padding: calc(env(safe-area-inset-top) + 11px) var(--gutter) 10px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--hairline);
+}
+
+#appbar .brand {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+#appbar .brand .mark {
+  width: 22px;
+  height: 22px;
+}
+
+#appbar a:not(.brand) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -11px -12px -11px 0;
+  color: var(--text-3);
+}
+#appbar a:not(.brand):hover .ico {
+  stroke: var(--text-2);
+}
+#appbar a .ico {
+  width: 19px;
+  height: 19px;
+  flex: none;
+}
+
+.bar-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.bar-who .title {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── desktop top bar (hidden on a phone) ── */
+
+#topbar {
+  display: none;
+}
+
+/* ── the mark ── a teal squircle tile with the horizontal dash + status dot
+ * from the brand mark, drawn as inherited stroke/fill on the <svg> itself —
+ * `<use>` content is a shadow tree, so a `.mark rect` selector would never
+ * match anything inside it. */
+.mark {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+.mark .mark-tile {
+  fill: var(--accent);
+}
+.mark .mark-dash,
+.mark .mark-dot {
+  fill: var(--bg);
+}
+
+/* ── view host ── */
+
+#views {
+  flex: 1;
+  min-width: 0;
+  padding: 0 var(--gutter) calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
+}
+
+.view {
+  display: none;
+}
+.view.active {
+  display: block;
+}
+
+/* Two-column body on desktop; the side column stacks under a hairline on a
+ * phone. A view that wants the side track declares it — see .split.stage in
+ * a future tile before assuming every view needs one. */
+.split {
+  display: block;
+}
+.main-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp6);
+}
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp8);
+  margin-top: var(--sp8);
+  padding-top: var(--sp6);
+  border-top: 1px solid var(--hairline);
+}
+.side:empty {
+  display: none;
+}
+
+/* ── phone bottom tab bar ──
+ * Painted from nav.js's split() — the first BAR_SLOTS destinations plus a
+ * fixed More button, never fewer, never markup. */
+#tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  display: flex;
+  padding: 6px 8px env(safe-area-inset-bottom);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--hairline);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0 5px;
+  min-height: 44px;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.tab .ico {
+  width: 21px;
+  height: 21px;
+}
+.tab[aria-current="page"] {
+  color: var(--text);
+}
+.tab[aria-current="page"] .ico {
+  stroke: var(--accent);
+}
+
+.tab-more {
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* ── "More" sheet — the phone's only route to a destination pushed off the
+ * bar, and to the nav order editor. A native <dialog> so the platform
+ * handles focus, backdrop dimming and inertness behind it for free. */
+dialog.sheet {
+  border: 0;
+  padding: 0;
+  margin: auto auto 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: 88dvh;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  color: var(--text);
+}
+dialog.sheet::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.sheet-inner {
+  overflow: hidden;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+}
+.sheet-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp4) var(--gutter) calc(var(--sp6) + env(safe-area-inset-bottom));
+}
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp4) var(--gutter) var(--sp2);
+}
+.sheet-head h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 0;
+}
+.sheet-close {
+  appearance: none;
+  border: 0;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border-radius: var(--radius-pill);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* A dialog does not stop the page behind it scrolling on its own — locking
+ * the scrollport on the open state, never on a class an opener has to
+ * remember to add and remove. */
+html:has(dialog[open]),
+html:has(dialog[open]) body {
+  overflow: hidden;
+}
+html {
+  scrollbar-gutter: stable;
+}
+
+.sheet-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp3);
+  min-height: 48px;
+  padding: 0 var(--gutter);
+  color: var(--text);
+}
+.sheet-row .ico {
+  width: 19px;
+  height: 19px;
+  color: var(--text-3);
+  flex: none;
+}
+
+/* ── desktop (≥900px) ── */
+
+@media (min-width: 900px) {
+  body {
+    font-size: 13px;
+  }
+
+  #shell {
+    grid-template-columns: var(--rail-w) 1fr;
+  }
+
+  #appbar-wrap {
+    display: none;
+  }
+  #topbar-wrap {
+    display: block;
+  }
+  #tabbar {
+    display: none;
+  }
+
+  #rail {
+    display: flex;
+    flex-direction: column;
+    background: var(--rail-bg);
+    border-right: 1px solid var(--hairline);
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .rail-brand {
+    padding: 20px 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .rail-brand .mark {
+    width: 20px;
+    height: 20px;
+  }
+  .rail-brand span {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-2);
+  }
+
+  .rail-nav {
+    padding: 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow-y: auto;
+  }
+  .rail-nav a {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 10px;
+    border-radius: var(--radius);
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .rail-nav a:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+  .rail-nav a[aria-current="page"] {
+    background: var(--surface);
+    box-shadow: inset 2px 0 0 var(--accent);
+    color: var(--text);
+  }
+  .rail-nav a[aria-current="page"] .ico {
+    stroke: var(--accent);
+  }
+  .rail-nav .ico {
+    width: 17px;
+    height: 17px;
+    flex: none;
+  }
+
+  .rail-nav-empty {
+    padding: var(--sp3) 10px;
+    color: var(--text-3);
+    font-size: 12px;
+  }
+
+  /* Foot: the app's own controls, not a screen among the tile screens above
+   * it — "Customise navigation" opens the same order editor as the phone's
+   * More sheet, and Settings sits under it, pinned (nav.ts), so it can
+   * never be dragged into the ordered list or take a rail slot. */
+  .rail-foot {
+    margin-top: auto;
+    padding: var(--sp3) 10px calc(var(--sp4) + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .rail-foot button,
+  .rail-foot a {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 10px;
+    border-radius: var(--radius);
+    color: var(--text-2);
+    font-size: 13px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    text-align: left;
+  }
+  .rail-foot button:hover,
+  .rail-foot a:hover {
+    background: color-mix(in srgb, var(--text) 4%, transparent);
+  }
+  .rail-foot a[aria-current="page"] {
+    color: var(--accent-ink);
+  }
+  .rail-foot .ico {
+    width: 17px;
+    height: 17px;
+    flex: none;
+  }
+
+  #topbar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp4);
+    padding: var(--sp4) var(--sp6);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--hairline);
+  }
+  #topbar .title {
+    font-size: 16px;
+    font-weight: 500;
+  }
+
+  #views {
+    padding: var(--sp6) var(--sp8) var(--sp8);
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: 1fr var(--side-w);
+    gap: var(--sp8);
+    align-items: start;
+  }
+  .side {
+    margin-top: 0;
+    padding-top: 0;
+    padding-left: var(--sp6);
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+  }
+}
+
+/* ── generic building blocks tiles can use ── */
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp4);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent-ink);
+  border-radius: var(--radius-pill);
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 44px;
+}
+.btn:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+input,
+textarea {
+  background: var(--surface-2);
+  border: 1px solid var(--inactive);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 10px 12px;
+  /* Below 16px, focusing an input zooms mobile Safari in and it never zooms
+   * back out on blur — 16px here is load-bearing, not a stray choice. */
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Lock indicator (docs/DESIGN.md §1b) — every tile section carries
+ * data-encryption-tier, set by mountInstalledTiles (../tiles/registry.ts);
+ * this is the one place that turns it into the green/grey padlock the user
+ * actually sees, so a tile never has to draw its own. */
+.tile-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+[data-encryption-tier="e2ee"] .tile-lock {
+  color: var(--accent-ink);
+}
+[data-encryption-tier="e2ee"] .tile-lock .ico {
+  stroke: var(--accent-ink);
+}
+.tile-lock .ico {
+  width: 13px;
+  height: 13px;
+}

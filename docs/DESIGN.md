@@ -161,6 +161,16 @@ Each tile is a self-contained module implementing:
 - `syncQueue.push(record)` — queue a local change for sync.
 - `storage.get/put(namespacedKey)` — IndexedDB wrapper, encryption handled transparently at this layer (tiles never touch raw crypto for storage).
 
+### 4.4 Post-auth shell — navigation, layout, style
+
+`src/app/shell/` (`nav.ts`, `shell.ts`, `shell.css`, `icons.ts`, `main.ts` — the `/app/main.js` entry point `public/shell/auth.js` dynamically imports on a successful passkey ceremony, section 13.1). Structure — one saved order painting both a desktop rail and a phone bottom bar, with Settings pinned out of that order rather than sorted into it — is adapted from a sibling project's PWA shell (F1 Apex); written fresh here against oneda's own tile model, not copied from that project.
+
+- **One order, two renderings.** `nav.ts`'s `order()` repairs the saved id list against the tiles this build actually has (an id from an older/newer device is appended/dropped, never crashes the shell); `split()` gives the phone's bar the first `BAR_SLOTS` and hands the rest to a More sheet. Both navs are painted from the same list, so a phone and a laptop on the same account can't disagree about ordering.
+- **Settings is pinned, not a tile.** It has no registry entry and is never in `defaultOrder()`, so a reorder can never move it, and it can never take a bar slot or become the front door. It is hand-placed: under "Customise navigation" in the desktop rail's foot, and as a fixed row in the phone's More sheet.
+- **Nav order syncs** under `shell:nav-order`, alongside the tile registry's own `shell:tile-registry` key — the golden rule in section 1 applies to arrangement, not just content.
+- **Two layouts at 900px**, one shell: a fixed-width rail with every destination on desktop, a bottom tab bar with the first four plus More on a phone. `shell.css` carries the full token scale (spacing, radii, colour) and is oneda's own palette (teal `#14b8a6` on `#0b0f0e`), not the sibling project's.
+- Not yet wired: `src/worker/index.ts`'s `serveGatedBundle` is still the pre-existing `501`/`404` stub (section 13.2) — these files exist as source under `src/app/shell/` and need an actual bundle-serving route before `/app/main.js` resolves in production.
+
 ---
 
 ## 5. Offline & sync

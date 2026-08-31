@@ -38,6 +38,10 @@ function icon(name: string): HTMLElement {
 export function renderSettings(container: HTMLElement, deps: SettingsDeps): void {
   const paint = () => {
     clear(container);
+    // The bar's context line (shell.ts reads this on navigation). Uppercasing is
+    // the stylesheet's job, so this stays in ordinary prose.
+    const count = deps.manifests.length;
+    container.dataset.context = count === 1 ? "1 tile" : `${count} tiles`;
     // No heading of its own: the sticky bar above already names the screen
     // (shell.ts's navigate()), and a page that prints its title twice reads
     // as two different things stacked. Same rule for every tile.

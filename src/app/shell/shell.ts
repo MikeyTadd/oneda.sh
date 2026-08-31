@@ -134,7 +134,7 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   const brand = el("a.brand", { href: "#/" + defaultRoute(orderedIds), "aria-label": "Home" });
   brand.innerHTML = MARK_SVG;
   const who = el("div.bar-who");
-  appendChildren(who, el("span.title#appbar-title", { text: "" }));
+  appendChildren(who, el("span.context#appbar-context", { text: "" }), el("span.title#appbar-title", { text: "" }));
   const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
   const gear = el("a.bar-bell", { href: "#/settings", "aria-label": "Settings" });
   gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
@@ -146,7 +146,7 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   const topbarWrap = el("div.bar-wrap#topbar-wrap");
   const topbar = el("div#topbar");
   const topWho = el("div.bar-who");
-  appendChildren(topWho, el("span.title#topbar-title", { text: "" }));
+  appendChildren(topWho, el("span.context#topbar-context", { text: "" }), el("span.title#topbar-title", { text: "" }));
   const topbarBell = el("button.bar-bell#topbar-bell", { type: "button", "aria-label": "Alerts" });
   appendChildren(topbar, topWho, el("span.grow"), topbarBell);
   appendChildren(topbarWrap, topbar);
@@ -226,6 +226,15 @@ function markCurrentTab(route: string | null): void {
 
 let currentRoute: string | null = null;
 
+/** The small uppercase line above the title — what this screen is *of*, where
+ * that is a fact worth a row of its own. Empty collapses the bar back to a
+ * single line, which is what most screens want. */
+export function setBarContext(text: string): void {
+  forEachEl(document.querySelectorAll<HTMLElement>("#appbar-context, #topbar-context"), (c) => {
+    c.textContent = text;
+  });
+}
+
 function navigate(route: string): void {
   currentRoute = route;
   forEachEl(document.querySelectorAll<HTMLElement>("#views .view"), (section) => {
@@ -235,6 +244,11 @@ function navigate(route: string): void {
   forEachEl(document.querySelectorAll<HTMLElement>("#appbar-title, #topbar-title"), (t) => {
     t.textContent = label;
   });
+  // Read off the view rather than pushed by it, so it can't be left behind on a
+  // screen that has nothing to say: a view that wants a context line declares one
+  // (data-context) and every other route clears it by having none.
+  const view = document.querySelector<HTMLElement>(`#views .view[data-tile-id="${route}"]`);
+  setBarContext(view?.dataset.context ?? "");
   markCurrentTab(route);
   if (location.hash !== `#/${route}`) location.hash = `#/${route}`;
 }

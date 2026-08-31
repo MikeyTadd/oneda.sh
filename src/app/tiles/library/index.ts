@@ -230,12 +230,41 @@ function backToList(): void {
 }
 
 function openNewLibrarySheet(): void {
-  const node = openSheet("library-new", { label: "New library" });
+  const node = openSheet("library-new", { label: "New library", dismissOnBackdrop: false });
   let hidden = false;
 
   const nameInput = el<HTMLInputElement>("input.text-input", { type: "text", placeholder: "e.g. Photos" });
-  const passInput = el<HTMLInputElement>("input.text-input", { type: "password", placeholder: "Passphrase" });
-  const passConfirm = el<HTMLInputElement>("input.text-input", { type: "password", placeholder: "Confirm passphrase" });
+  // This passphrase is never a website login — a password manager offering to save or
+  // autofill it here is the wrong prompt at the wrong moment. `autocomplete="new-password"`
+  // is the actual standardized signal (the one Chrome/Safari itself honours); the three
+  // `data-*ignore` attributes are the best-effort, no-standard-exists equivalent each major
+  // manager (1Password, LastPass, Bitwarden) looks for on its own. None of this is a security
+  // boundary — a password manager that ignores its own opt-out attribute is a UX
+  // false-positive, not a way past the passphrase itself.
+  const passInput = el<HTMLInputElement>("input.text-input", {
+    type: "password",
+    autocomplete: "new-password",
+    autocorrect: "off",
+    autocapitalize: "off",
+    spellcheck: "false",
+    "data-1p-ignore": "true",
+    "data-lpignore": "true",
+    "data-bwignore": "true",
+    "data-form-type": "other",
+    placeholder: "Passphrase",
+  });
+  const passConfirm = el<HTMLInputElement>("input.text-input", {
+    type: "password",
+    autocomplete: "new-password",
+    autocorrect: "off",
+    autocapitalize: "off",
+    spellcheck: "false",
+    "data-1p-ignore": "true",
+    "data-lpignore": "true",
+    "data-bwignore": "true",
+    "data-form-type": "other",
+    placeholder: "Confirm passphrase",
+  });
   const passFields = el("div", { hidden: true }, [formField("Passphrase", passInput), formField("Confirm passphrase", passConfirm)]);
 
   const hideRow = el("div.toggle-row", {}, [
@@ -293,7 +322,7 @@ function openNewLibrarySheet(): void {
 }
 
 function openRenameLibrarySheet(library: LibraryMeta): void {
-  const node = openSheet("library-rename", { label: "Rename library" });
+  const node = openSheet("library-rename", { label: "Rename library", dismissOnBackdrop: false });
   const input = el<HTMLInputElement>("input.text-input", { type: "text", value: displayName(library) });
 
   function submit(): void {
@@ -444,7 +473,7 @@ function fileRow(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey
 }
 
 function openUploadSheet(library: LibraryMeta): void {
-  const node = openSheet("library-upload", { label: "Upload a file" });
+  const node = openSheet("library-upload", { label: "Upload a file", dismissOnBackdrop: false });
   let chosenFile: File | null = null;
 
   const fileInput = el<HTMLInputElement>("input.text-input", { type: "file" });
@@ -501,7 +530,7 @@ function openUploadSheet(library: LibraryMeta): void {
 }
 
 function openEditFileSheet(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey | undefined): void {
-  const node = openSheet("library-edit", { label: "Edit file" });
+  const node = openSheet("library-edit", { label: "Edit file", dismissOnBackdrop: false });
   const titleInput = el<HTMLInputElement>("input.text-input", { type: "text", value: meta.title });
   const descInput = el<HTMLTextAreaElement>("textarea.text-input", { rows: 3, text: meta.description });
   const keywordsInput = el<HTMLInputElement>("input.text-input", { type: "text", value: meta.keywords.join(", ") });
@@ -544,7 +573,7 @@ async function removeFile(file: LibraryFile): Promise<void> {
 }
 
 async function openPreview(file: LibraryFile, meta: LibraryFileMeta, contentKey: CryptoKey | undefined): Promise<void> {
-  const node = openSheet("library-preview", { label: meta.title || "File" });
+  const node = openSheet("library-preview", { label: meta.title || "File", dismissOnBackdrop: false });
   const scroll = el("div.sheet-scroll", {}, [el("p.empty", { text: "Loading…" })]);
   const editBtn = el<HTMLButtonElement>("button.btn.ghost", { type: "button", text: "Edit", onClick: () => openEditFileSheet(file, meta, contentKey) });
   const deleteBtn = el<HTMLButtonElement>("button.btn.ghost.danger", {
@@ -646,7 +675,7 @@ async function handleRevealPrompt(): Promise<void> {
  * hidden and its own single-purpose sheet. */
 function promptPassphrase(title: string): Promise<string | null> {
   return new Promise((resolve) => {
-    const node = openSheet("library-passphrase", { label: title });
+    const node = openSheet("library-passphrase", { label: title, dismissOnBackdrop: false });
     let resolved = false;
     const finish = (value: string | null) => {
       if (resolved) return;
@@ -655,7 +684,18 @@ function promptPassphrase(title: string): Promise<string | null> {
       node.close();
     };
 
-    const input = el<HTMLInputElement>("input.text-input", { type: "password", placeholder: "Passphrase" });
+    const input = el<HTMLInputElement>("input.text-input", {
+      type: "password",
+      autocomplete: "new-password",
+      autocorrect: "off",
+      autocapitalize: "off",
+      spellcheck: "false",
+      "data-1p-ignore": "true",
+      "data-lpignore": "true",
+      "data-bwignore": "true",
+      "data-form-type": "other",
+      placeholder: "Passphrase",
+    });
     input.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();

@@ -86,9 +86,14 @@ async function unlock() {
       credentials: "include",
     });
     if (!finishRes.ok) {
-      throw new Error(`server returned ${finishRes.status}: ${(await finishRes.text()).slice(0, 120)}`);
+      const detail = (await finishRes.text()).slice(0, 120);
+      // A passkey the server has never heard of — typically one left behind by a
+      // registration that didn't complete. Tell the provider so it stops offering it.
+      if (finishRes.status === 401) await signalUnknownCredential(assertion.id);
+      throw new Error(`server returned ${finishRes.status}: ${detail}`);
     }
-    const { wrappedDek } = await finishRes.json();
+    const { wrappedDek, userHandle, acceptedCredentialIds } = await finishRes.json();
+    void signalAcceptedCredentials(userHandle, acceptedCredentialIds);
 
     step("derive-master-key");
     const masterKey = await deriveMasterKeyFromPrf(prfOutput);
@@ -207,6 +212,43 @@ async function completeSetup(credential, prfOutput) {
   step("load-app-bundle");
   const app = await import("/app/main.js");
   await app.start({ dek });
+}
+
+// --- Keeping the passkey provider's list honest (section 9b) ---
+//
+// Failed registrations leave passkeys on the device that the server has no record of. They
+// still show up in the picker, and choosing one just fails, so the provider is told what is
+// real and prunes the rest. Both calls are best-effort: older platforms don't implement
+// them, and neither is worth failing a working login over.
+
+/** Reconciles the provider against the account's actual credentials. Destructive by design
+ * — anything absent from `ids` is removed — so `ids` must be the server's complete set. */
+async function signalAcceptedCredentials(userHandle, ids) {
+  try {
+    if (!PublicKeyCredential.signalAllAcceptedCredentials || !userHandle) return;
+    // Never signal an empty set. The call means "these are all the credentials that exist",
+    // so an empty list is an instruction to delete every passkey for this account — an
+    // account that has just authenticated one, which is proof the list is wrong rather than
+    // genuinely empty.
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    await PublicKeyCredential.signalAllAcceptedCredentials({
+      rpId: location.hostname,
+      userId: userHandle,
+      allAcceptedCredentialIds: ids,
+    });
+  } catch (err) {
+    console.warn("signalAllAcceptedCredentials", err);
+  }
+}
+
+/** Reports a single credential the server rejected as unknown. */
+async function signalUnknownCredential(credentialId) {
+  try {
+    if (!PublicKeyCredential.signalUnknownCredential || !credentialId) return;
+    await PublicKeyCredential.signalUnknownCredential({ rpId: location.hostname, credentialId });
+  } catch (err) {
+    console.warn("signalUnknownCredential", err);
+  }
 }
 
 // --- WebAuthn PRF -> master key -> DEK (mirrors src/app/crypto/keys.ts) ---

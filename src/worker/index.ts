@@ -234,8 +234,22 @@ async function handleAuth(request: Request, env: Env, url: URL): Promise<Respons
         .bind(verification.authenticationInfo.newCounter, credRow.id)
         .run();
 
+      // Everything this account legitimately has, for the client's Signal API housekeeping
+      // (section 9b): the passkey provider prunes anything it holds for us that isn't in
+      // this list. It must therefore be the complete set — a partial list would tell the
+      // keychain to delete working passkeys.
+      const accepted = await env.DB.prepare(`SELECT id FROM credentials WHERE user_id = ?`)
+        .bind(credRow.user_id)
+        .all<{ id: string }>();
+
       const token = await createSession(env, credRow.user_id, credRow.id, credRow.device_label);
-      const res = Response.json({ wrappedDek: bytesToBase64Url(fromD1Blob(wrappedRow.wrapped_dek)) });
+      const res = Response.json({
+        wrappedDek: bytesToBase64Url(fromD1Blob(wrappedRow.wrapped_dek)),
+        // The user handle as the authenticator knows it — the same bytes registration put in
+        // `userID`, which is the UTF-8 of the account id (auth/webauthn.ts).
+        userHandle: bytesToBase64Url(new TextEncoder().encode(credRow.user_id)),
+        acceptedCredentialIds: accepted.results.map((r) => r.id),
+      });
       clearChallengeCookie(res.headers);
       setSessionCookie(res.headers, token);
       return res;

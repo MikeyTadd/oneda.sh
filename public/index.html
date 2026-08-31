@@ -140,6 +140,10 @@
          first account exists, so this is only ever useful once, on a fresh deployment. -->
     <button class="setup-link" id="setup" type="button">First time? Set up your passkey</button>
     <button class="setup-link" id="recover" type="button">Lost your passkey? Recover with your phrase</button>
+    <!-- The escape hatch for when this screen itself is the problem — a stale session
+         cookie, a broken local cache — and Settings' own "Reset this device" can't be
+         reached because reaching it means getting past this screen first. -->
+    <button class="setup-link" id="wipe" type="button">Sign out and clear this device</button>
   </div>
   <!-- Populated entirely by auth.ts: the recovery phrase display/confirm at registration,
        and the phrase-entry redemption form. Nothing here is static markup. -->

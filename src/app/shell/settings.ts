@@ -222,6 +222,146 @@ function alertsBlock(): HTMLElement {
  * src/worker/index.ts still answer 501, so there is genuinely nothing to
  * sign in to yet, and a "Sign in" button that cannot would be the one
  * thing on this screen that lies. */
+interface Device {
+  id: string;
+  deviceLabel: string;
+  createdAt: number;
+  lastSeenAt: number | null;
+  isCurrent: boolean;
+}
+
+function relativeTime(ms: number): string {
+  const mins = Math.round((Date.now() - ms) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min${mins === 1 ? "" : "s"} ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/** Adding a device (section 2.1) has no separate ceremony of its own — the recovery phrase
+ * already does exactly this job: prove ownership of the account without the passkey that
+ * would normally do it, then attach a fresh one. A dedicated "invite this device" flow would
+ * mean a second way to authorize a new passkey, cross-device, relayed through the server —
+ * meaningfully more machinery (a live key exchange between two browsers) for a case the
+ * phrase already covers. */
+function deviceRow(device: Device, onChanged: () => void): HTMLElement {
+  const sub = device.lastSeenAt
+    ? `Last used ${relativeTime(device.lastSeenAt)}`
+    : `Added ${relativeTime(device.createdAt)}, never signed in since`;
+
+  const nameLine = el("div.name", {}, [
+    device.deviceLabel,
+    device.isCurrent ? el("span.device-badge", { text: "This device" }) : null,
+  ]);
+
+  const renameBtn = el("button.chip.act", { type: "button", text: "Rename", onClick: () => openRenameSheet(device, onChanged) });
+  const signOutBtn = el("button.chip.act", {
+    type: "button",
+    text: "Sign out",
+    onClick: () => openSignOutConfirm(device, onChanged),
+  });
+
+  return el("div.row", {}, [
+    icon("device"),
+    el("div.who", {}, [nameLine, el("div.sub", { text: sub })]),
+    el("div.device-actions", {}, [renameBtn, signOutBtn]),
+  ]);
+}
+
+function openRenameSheet(device: Device, onChanged: () => void): void {
+  const node = openSheet("confirm", { label: "Rename device" });
+  const input = el<HTMLInputElement>("input.text-field", { type: "text", value: device.deviceLabel, maxlength: 60 });
+  const err = el("p.err", { text: "" });
+
+  const save = el<HTMLButtonElement>("button.btn.go", {
+    type: "button",
+    text: "Save",
+    onClick: async () => {
+      const deviceLabel = input.value.trim();
+      if (!deviceLabel) {
+        err.textContent = "Give it a name.";
+        return;
+      }
+      save.disabled = true;
+      const res = await fetch(`/api/devices/${encodeURIComponent(device.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceLabel }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        save.disabled = false;
+        err.textContent = "Couldn't save that — try again.";
+        return;
+      }
+      node.close();
+      onChanged();
+    },
+  });
+
+  appendChildren(
+    node,
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Rename device", device.deviceLabel),
+      el("div.sheet-scroll", {}, [input, err]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), save]),
+    ])
+  );
+  input.focus();
+  input.select();
+}
+
+/**
+ * Revokes the device's sessions rather than deleting its passkey — section 9b's own
+ * distinction: this stops it syncing and calling the API from this moment on, it does not
+ * retroactively erase what it already has cached, and the passkey itself can still sign back
+ * in later (a false alarm, a phone found again) without a trip through recovery.
+ */
+function openSignOutConfirm(device: Device, onChanged: () => void): void {
+  const node = openSheet("confirm", { label: "Sign out device" });
+  const go = el<HTMLButtonElement>("button.btn.go.danger", {
+    type: "button",
+    text: "Sign out",
+    onClick: async () => {
+      go.disabled = true;
+      const res = await fetch(`/api/devices/${encodeURIComponent(device.id)}/signout`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) {
+        go.disabled = false;
+        return;
+      }
+      const { signedOutSelf } = (await res.json()) as { signedOutSelf: boolean };
+      if (signedOutSelf) {
+        // The session this very page is running on no longer exists — there is nothing left
+        // to repaint into, only the lock screen to land back on.
+        location.reload();
+        return;
+      }
+      node.close();
+      onChanged();
+    },
+  });
+
+  appendChildren(
+    node,
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Sign out device", device.deviceLabel),
+      el("div.sheet-scroll", {}, [
+        el("p.confirm-lead", {
+          text: device.isCurrent
+            ? "This ends this device's own session — you'll need your passkey again."
+            : `This ends "${device.deviceLabel}"'s session. It does not erase anything already cached there, and it can sign back in again with the same passkey.`,
+        }),
+      ]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), go]),
+    ])
+  );
+}
+
 function accountBlock(): HTMLElement {
   const idleSelect = el<HTMLSelectElement>("select.dwell", {
     "aria-label": "Re-lock after this much idle time",
@@ -238,24 +378,35 @@ function accountBlock(): HTMLElement {
     idleSelect.appendChild(option);
   }
 
+  const deviceRows = el("div.rows", {}, [el("p.empty", { text: "Loading…" })]);
+
+  const paintDevices = () => {
+    void fetch("/api/devices", { credentials: "include" })
+      .then((res) => (res.ok ? (res.json() as Promise<Device[]>) : Promise.reject(res.status)))
+      .then((devices) => {
+        clear(deviceRows);
+        appendChildren(deviceRows, ...devices.map((d) => deviceRow(d, paintDevices)));
+      })
+      .catch(() => {
+        clear(deviceRows);
+        appendChildren(deviceRows, el("p.empty", { text: "Couldn't load your devices." }));
+      });
+  };
+  paintDevices();
+
   return el("section.set-block", {}, [
     blockHead("Account"),
-    el("div.rows", {}, [
-      el("div.row", {}, [
-        icon("device"),
-        el("div.who", {}, [
-          el("div.name", { text: "This device" }),
-          el("div.sub", { text: "Unlocked with a passkey for this session" }),
-        ]),
-      ]),
-    ]),
+    el("p.block-note", {
+      text: "Every passkey registered to this account. Renaming is just a label; signing one out ends its session without touching what it's already cached (section 9b).",
+    }),
+    deviceRows,
     settingRow(
       "Re-lock when idle",
       "A fresh Face ID prompt after this long with nothing open, and every time you come back to the app — independent of your phone's own lock screen.",
       idleSelect
     ),
     el("p.nav-note", {
-      text: "Signing in on a second device, the device list and remote sign-out (design doc §9b) arrive with the passkey endpoints — those still answer 501, so there is nothing here to switch on yet.",
+      text: "A lost device is dealt with above, not with a key change: revoking it stops future sync and API access, but doesn't erase what it already cached locally or rotate the encryption key. If a device is actually compromised rather than lost, the real remedy is generating a new DEK — not built yet (section 9b).",
     }),
   ]);
 }

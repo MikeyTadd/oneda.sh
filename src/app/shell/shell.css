@@ -11502,3 +11502,43 @@ button.row.as-button {
   font-size: 12px;
   color: var(--n600);
 }
+
+/* A labelled text field — the device rename sheet (settings.ts, section 9b) is the first
+ * thing in onedash that asks for free text, and F1 Apex has nothing to say about it since it
+ * never does. Sized and coloured off the same tokens select.dwell already uses, so it reads
+ * as one control family rather than a one-off. */
+.text-field {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--n800);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: var(--sp3) var(--sp4);
+  font: inherit;
+  font-size: 16px;
+}
+.text-field:focus {
+  outline: none;
+  border-color: var(--n600);
+}
+
+/* One row per registered passkey (settings.ts's deviceRow) — name/meta on the left, the two
+ * actions on the right. Reuses .row's own height/padding/radius; only the action cluster and
+ * the "this device" badge are new. */
+.device-actions {
+  display: flex;
+  gap: var(--sp2);
+  flex: none;
+}
+.device-badge {
+  display: inline-block;
+  margin-left: var(--sp2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--live-ink);
+  background: color-mix(in srgb, var(--live) 20%, transparent);
+}

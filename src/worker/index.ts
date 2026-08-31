@@ -16,6 +16,7 @@ import {
   setSessionCookie,
   clearSessionCookie,
   type Env,
+  type SessionRow,
 } from "./lib/session.js";
 import { writeChallengeCookie, readChallengeCookie, clearChallengeCookie } from "./lib/challenge.js";
 import {
@@ -402,7 +403,91 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return new Response("unauthorized", { status: 401 });
   }
 
-  // TODO: device list / revoke (section 9b), integration OAuth callbacks (section 9d),
-  // R2 upload/download proxying (section 3.3), article-reader proxy (section 9a).
+  if (url.pathname === "/api/devices" && request.method === "GET") {
+    return listDevices(env, session);
+  }
+  const renameMatch = url.pathname.match(/^\/api\/devices\/([^/]+)$/);
+  if (renameMatch?.[1] && request.method === "PATCH") {
+    return renameDevice(request, env, session, decodeURIComponent(renameMatch[1]));
+  }
+  const signoutMatch = url.pathname.match(/^\/api\/devices\/([^/]+)\/signout$/);
+  if (signoutMatch?.[1] && request.method === "POST") {
+    return signOutDevice(env, session, decodeURIComponent(signoutMatch[1]));
+  }
+
+  // TODO: integration OAuth callbacks (section 9d), R2 upload/download proxying
+  // (section 3.3), article-reader proxy (section 9a).
   return new Response("not found", { status: 404 });
+}
+
+interface DeviceRow {
+  id: string;
+  device_label: string;
+  created_at: number;
+  last_seen_at: number | null;
+}
+
+/** One row per registered passkey, not per session token — a credential accumulates a new
+ * session on every unlock (createSession is called from login/register/recover finish
+ * alike), so grouping by credential_id is what keeps this reading as "your devices" rather
+ * than "every time you've ever unlocked one of them". */
+async function listDevices(env: Env, session: SessionRow): Promise<Response> {
+  const rows = await env.DB.prepare(
+    `SELECT credentials.id, credentials.device_label, credentials.created_at, MAX(sessions.last_seen_at) AS last_seen_at
+     FROM credentials
+     LEFT JOIN sessions ON sessions.credential_id = credentials.id AND sessions.revoked_at IS NULL
+     WHERE credentials.user_id = ?
+     GROUP BY credentials.id
+     ORDER BY credentials.created_at ASC`
+  )
+    .bind(session.user_id)
+    .all<DeviceRow>();
+
+  return Response.json(
+    rows.results.map((row) => ({
+      id: row.id,
+      deviceLabel: row.device_label,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      isCurrent: row.id === session.credential_id,
+    }))
+  );
+}
+
+async function renameDevice(request: Request, env: Env, session: SessionRow, credentialId: string): Promise<Response> {
+  const body = await request.json<{ deviceLabel: string }>();
+  const deviceLabel = (body.deviceLabel ?? "").trim().slice(0, 60);
+  if (!deviceLabel) {
+    return new Response("a name is required", { status: 400 });
+  }
+
+  // The `user_id` check is the ownership boundary — without it this would rename any
+  // credential on the server by id, not just the caller's own.
+  const result = await env.DB.prepare(`UPDATE credentials SET device_label = ? WHERE id = ? AND user_id = ?`)
+    .bind(deviceLabel, credentialId, session.user_id)
+    .run();
+  if (result.meta.changes === 0) {
+    return new Response("not found", { status: 404 });
+  }
+  return Response.json({ ok: true, deviceLabel });
+}
+
+/** Revokes sessions, never the credential itself (design doc section 9b: "revoking a device
+ * deletes its session token server-side" — the passkey registration stays, so a returned
+ * device or a false alarm can sign back in without going through recovery again). Signing
+ * out the device making this very call is allowed and does exactly what it says: the
+ * response still succeeds, and the caller's own next request finds its session gone. */
+async function signOutDevice(env: Env, session: SessionRow, credentialId: string): Promise<Response> {
+  const owned = await env.DB.prepare(`SELECT id FROM credentials WHERE id = ? AND user_id = ?`)
+    .bind(credentialId, session.user_id)
+    .first();
+  if (!owned) {
+    return new Response("not found", { status: 404 });
+  }
+
+  await env.DB.prepare(`UPDATE sessions SET revoked_at = ? WHERE credential_id = ? AND user_id = ? AND revoked_at IS NULL`)
+    .bind(Date.now(), credentialId, session.user_id)
+    .run();
+
+  return Response.json({ ok: true, signedOutSelf: credentialId === session.credential_id });
 }

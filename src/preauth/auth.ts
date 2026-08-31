@@ -24,6 +24,7 @@ const statusEl = document.getElementById("status") as HTMLParagraphElement;
 const unlockBtn = document.getElementById("unlock") as HTMLButtonElement;
 const setupBtn = document.getElementById("setup") as HTMLButtonElement;
 const recoverBtn = document.getElementById("recover") as HTMLButtonElement;
+const wipeBtn = document.getElementById("wipe") as HTMLButtonElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
 
 // Set when a passkey has been created but its PRF output still has to be fetched by a
@@ -36,6 +37,7 @@ setupBtn.addEventListener("click", () => {
   return void setup();
 });
 recoverBtn.addEventListener("click", () => showRecoverForm());
+wipeBtn.addEventListener("click", () => showWipeConfirm());
 
 // Which step of the ceremony we're on, so a failure says where it happened rather than just
 // what — the difference between "Setup failed" and "failed at credentials.create", which is
@@ -411,6 +413,86 @@ function showRecoverForm(): void {
 
   appendMany(inner, h2, sub, textarea, err, btn, cancel);
   overlay.appendChild(inner);
+}
+
+/** The escape hatch for when the lock screen itself is the problem — a stale session cookie,
+ * a broken local cache — and Settings' own "Reset this device" can't be reached because
+ * reaching it means getting past this screen first. Mirrors what
+ * src/app/shell/updates.ts's resetApp() does, since that lives in the gated bundle and can't
+ * be imported here (section 13.1) — the two lists of what gets cleared must be kept in step
+ * by hand if either one changes. Nothing server-side is touched beyond ending this device's
+ * own session; the account, its passkeys and its recovery phrase are all untouched. */
+function showWipeConfirm(): void {
+  overlay.hidden = false;
+  overlay.innerHTML = "";
+  const inner = document.createElement("div");
+  inner.className = "overlay-inner";
+
+  const h2 = document.createElement("h2");
+  h2.textContent = "Sign out and clear this device";
+  const sub = document.createElement("p");
+  sub.className = "sub";
+  sub.textContent =
+    "Clears everything this browser has stored — cached data, preferences, this device's session — and reloads to a clean lock screen. Your account, passkeys and recovery phrase are untouched; this only affects this device.";
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.textContent = "Clear this device";
+  btn.addEventListener("click", () => void wipeThisDevice(btn));
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "ghost";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", () => {
+    overlay.hidden = true;
+  });
+
+  appendMany(inner, h2, sub, btn, cancel);
+  overlay.appendChild(inner);
+}
+
+async function wipeThisDevice(btn: HTMLButtonElement): Promise<void> {
+  btn.disabled = true;
+  btn.textContent = "Clearing…";
+
+  // Ends the session server-side first — the cookie is HttpOnly, so this page can never
+  // drop it itself, and leaving the device signed in would be exactly the wrong half to skip.
+  await fetch("/auth/logout", { method: "POST", credentials: "include" }).catch(() => {});
+
+  await new Promise<void>((resolve) => {
+    try {
+      const request = indexedDB.deleteDatabase("onedash");
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      request.onblocked = () => resolve();
+      setTimeout(resolve, 3000);
+    } catch {
+      resolve();
+    }
+  });
+
+  try {
+    localStorage.clear();
+    sessionStorage.clear();
+  } catch {
+    // Private mode, or storage disabled. Nothing to clear.
+  }
+
+  for (const cookie of document.cookie.split(";")) {
+    const name = cookie.split("=")[0]?.trim();
+    if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+  }
+
+  if ("caches" in window) {
+    await Promise.all((await caches.keys()).map((key) => caches.delete(key)));
+  }
+  if ("serviceWorker" in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((r) => r.unregister()));
+  }
+
+  location.replace("/");
 }
 
 /** The checksum already passed (showRecoverForm), so this is genuinely a 12-word phrase —

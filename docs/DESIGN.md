@@ -71,6 +71,9 @@ Section 9d originally called Monzo "E2EE." That's not quite right once the webho
 
 ### 2.2 Key derivation
 - On auth, call WebAuthn `get()` with the **PRF extension**, using a fixed per-purpose salt (e.g. one salt for "master key", allows deriving multiple sub-keys later if needed).
+- **The salt must be exactly 32 bytes.** PRF is built on CTAP2's `hmac-secret`, which takes a 32-byte salt; the WebAuthn layer is supposed to hash a shorter input up to length, but platforms disagree and the failure is silent. A 22-byte salt worked against Chromium's virtual authenticator and was dropped outright by Safari/iCloud Keychain — no error, just no `prf` key in `getClientExtensionResults()`, which is indistinguishable from "this device doesn't support PRF". Both clients therefore derive the salt as `SHA-256("onedash:prf:master-key")`. Anything that looks like it produces 32 bytes but doesn't (`.slice(0, 32)` on a shorter string truncates, it cannot pad) will cost you an afternoon.
+- **The salt belongs to the client, never the server.** It decides which key gets derived, so a salt taken from a server response would let a tampered-with response steer the client onto a different master key. It also cannot survive JSON — a `Uint8Array` serialises to `{"0":111,...}`, which is not the `BufferSource` the API needs.
+- **Expect the PRF output to need a second ceremony.** Authenticators aren't obliged to return `prf.results` from `create()`, and Safari doesn't. The follow-up `get()` needs its own user activation — Safari treats the gesture as spent by `create()` and rejects a call chained straight onto it — so it has to be driven by a fresh tap, not awaited in the same handler.
 - PRF output → HKDF → AES-256-GCM master key.
 - Master key never leaves memory unencrypted; never written to storage.
 - **Cross-device:** same passkey + same salt = same derived key on any device (phone, desktop) — no key transfer needed, each device re-derives independently.

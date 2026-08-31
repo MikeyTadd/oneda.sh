@@ -23,8 +23,9 @@ setupBtn.addEventListener("click", () => {
   return void setup();
 });
 
-// Which step of the ceremony we're on, so a failure says where it happened rather than
-// just what. Bring-up scaffolding, paired with the Worker's /debug/client-error route.
+// Which step of the ceremony we're on, so a failure says where it happened rather than just
+// what — the difference between "Setup failed" and "failed at credentials.create", which is
+// the whole diagnosis when there's no console on a phone.
 let currentStep = "idle";
 function step(name) {
   currentStep = name;
@@ -36,38 +37,16 @@ function fail(what, err) {
   const detail = err?.name ? `${err.name}: ${err.message}` : String(err);
   statusEl.textContent = `${what} failed at ${currentStep} — ${detail}`;
   console.error(what, currentStep, err);
-  report(`${what} failed at step=${currentStep} :: ${detail}`);
 }
 
-/** Best-effort copy of a failure to the Worker log — the phone has no console. Never
- * allowed to throw over the top of the failure it's reporting. */
-function report(line) {
-  try {
-    void fetch("/debug/client-error", {
-      method: "POST",
-      headers: { "content-type": "text/plain" },
-      body: `${line} :: ua=${navigator.userAgent}`,
-      keepalive: true,
-    }).catch(() => {});
-  } catch {
-    /* reporting is never the thing that breaks the page */
-  }
+// Registered only now that the ceremony is known to work: a cache-first worker installed
+// during bring-up would have pinned a broken shell into the browser. Gives the lock screen
+// offline (section 5) and gives push something to wake (section 6).
+if ("serviceWorker" in navigator) {
+  addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").catch((err) => console.error("sw", err));
+  });
 }
-
-// Bring-up: report what this browser claims it supports, on load and without any ceremony.
-// The same flow completes against a PRF-capable authenticator, so when a device returns no
-// PRF result this is what distinguishes "won't" from "asked wrongly". Goes with the rest of
-// the /debug/client-error scaffolding.
-void (async () => {
-  try {
-    const caps = PublicKeyCredential.getClientCapabilities
-      ? await PublicKeyCredential.getClientCapabilities()
-      : null;
-    report(`capabilities :: prf=${caps ? caps["extension:prf"] : "getClientCapabilities unavailable"} :: ${JSON.stringify(caps)}`);
-  } catch (err) {
-    report(`capabilities threw :: ${err?.name}: ${err?.message}`);
-  }
-})();
 
 async function unlock() {
   statusEl.textContent = "Waiting for Face ID…";
@@ -165,7 +144,6 @@ async function setup() {
     step("read-prf-from-create");
     const ext = credential.getClientExtensionResults() ?? {};
     const prfOutput = ext.prf?.results?.first;
-    report(`create() ok :: prf=${JSON.stringify(ext.prf ?? null)} :: haveOutput=${!!prfOutput}`);
     if (prfOutput) {
       await completeSetup(credential, prfOutput);
       return;

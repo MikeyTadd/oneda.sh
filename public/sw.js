@@ -4,7 +4,7 @@
 // DEK lives in page memory, not in the service worker's scope.
 
 // Bump on any shell change — that bump is what actually ships a new shell.
-const CACHE_NAME = "onedash-shell-v3";
+const CACHE_NAME = "onedash-shell-v4";
 const SHELL_ASSETS = [
   // The lock screen is served at the scope root (public/index.html), which is what
   // manifest.json's start_url points at — not /shell/index.html.
@@ -26,13 +26,26 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  // Only the public shell is safe to cache/serve offline-first; /app/ and /api/ routes are
-  // session-gated (section 13.2) and should always hit the network so revocation (9b) and
-  // auth state stay authoritative.
+  // Only the public shell is touched at all; /app/ and /api/ are session-gated (section
+  // 13.2) and must always hit the network so revocation (9b) and auth state stay
+  // authoritative.
   const url = new URL(event.request.url);
   if (!SHELL_ASSETS.includes(url.pathname)) return;
 
-  event.respondWith(caches.match(event.request).then((cached) => cached ?? fetch(event.request)));
+  // Network-first, cache as the fallback. The precache is here so the lock screen still
+  // renders with no connection — not so a device that *has* one gets served a stale shell.
+  // Cache-first would mean a deploy doesn't reach an installed PWA until the worker happens
+  // to update, and the shell carries the auth ceremony, which is the last thing that should
+  // be pinned to whatever version a phone happens to be holding.
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        const copy = response.clone();
+        void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached ?? Response.error()))
+  );
 });
 
 self.addEventListener("push", (event) => {

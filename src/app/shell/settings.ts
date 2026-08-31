@@ -42,16 +42,12 @@ export function renderSettings(container: HTMLElement, deps: SettingsDeps): void
     // (shell.ts's navigate()), and a page that prints its title twice reads
     // as two different things stacked. Same rule for every tile.
     //
-    // Two columns on desktop, the app's usual `.split`. The settings that
-    // *do* something go in the main column; About — which is read once and
-    // never operated — goes in the quiet side track. `.side-first` puts
-    // that track on the LEFT here, which is this screen's own variation on
-    // the shared `.split` (every other screen keeps the side on the right).
-    //
-    // The DOM order is main-then-side regardless, and the desktop swap is
-    // done with CSS `order`: on a phone `.split` stacks in DOM order, and
-    // About arriving *above* the controls would put a paragraph of prose
-    // between the reader and the thing they opened Settings to change.
+    // Two columns on desktop, the app's shared `.split`: the main column
+    // of settings on the left, the 380px side track on the right. That is
+    // the layout every other screen uses and the conventional one — the
+    // thing you came to operate gets the wide column, and the side carries
+    // what you read once. About lives there. On a phone `.split` stacks in
+    // DOM order, so About falls under the controls behind a hairline.
     const mainCol = el("div.main-col", {}, [
       navigationBlock(deps),
       tilesBlock(deps.manifests),
@@ -59,7 +55,7 @@ export function renderSettings(container: HTMLElement, deps: SettingsDeps): void
       accountBlock(),
     ]);
     const side = el("aside.side", {}, [aboutBlock(deps.appName)]);
-    appendChildren(container, el("div.split.side-first", {}, [mainCol, side]));
+    appendChildren(container, el("div.split", {}, [mainCol, side]));
   };
   paint();
   window.addEventListener("nav-changed", paint);

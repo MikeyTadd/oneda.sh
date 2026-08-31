@@ -55,7 +55,7 @@
     0 6px 18px rgba(0, 0, 0, 0.5);
 
   --rail-w: 220px;
-  --side-w: 360px;
+  --side-w: 380px;
   --tabbar-h: 52px;
   --gutter: 20px;
 }
@@ -643,39 +643,52 @@ html {
     font-weight: 500;
   }
 
+  /* The columns carry their own padding out here, so the host gives up
+   * its own and the hairline between them runs the full height of the
+   * screen rather than stopping short at a gutter. F1 Apex's rules,
+   * verbatim. */
   #views {
-    padding: var(--sp6) var(--sp8) var(--sp8);
+    padding: 0;
+  }
+
+  .view.active {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .split {
     display: grid;
-    grid-template-columns: 1fr var(--side-w);
-    gap: var(--sp8);
-    align-items: start;
+    grid-template-columns: minmax(0, 1fr) var(--side-w);
+    flex: 1;
+    min-height: 0;
   }
+
+  .split > .main-col {
+    padding: 22px 24px 40px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* In F1 Apex every screen is a `.split`, so `#views: padding 0` above is
+   * safe there. Here a tile may render straight into its view without
+   * declaring one — the reference `notes` tile does — and would then sit
+   * flush against the rail. Such a view takes the same padding the
+   * main-col would have given it. (`:has()` is already a dependency: the
+   * dialog scroll lock uses it.) */
+  .view.active:not(:has(> .split)) {
+    padding: 22px 24px 40px;
+  }
+
   .side {
     gap: 22px;
     margin-top: 0;
-    padding: 0 0 0 var(--sp6);
+    padding: 22px;
     border-top: 0;
     border-left: 1px solid var(--hairline);
     min-width: 0;
-  }
-
-  /* Settings' own variation on the shared split: the quiet About track
-   * sits on the LEFT. Done with `order` rather than DOM order so the
-   * phone still stacks main-then-side — About above the controls would
-   * put a paragraph of prose between the reader and what they came to
-   * change. The hairline swaps sides with it, or it would divide the two
-   * columns from the wrong edge. */
-  .split.side-first {
-    grid-template-columns: var(--side-w) minmax(0, 1fr);
-  }
-  .split.side-first > .side {
-    order: -1;
-    padding: 0 var(--sp6) 0 0;
-    border-left: 0;
-    border-right: 1px solid var(--hairline);
   }
 
 }

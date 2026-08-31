@@ -144,7 +144,9 @@ function paintSidebar(): void {
     text: "New folder",
     onClick: () => promptNewFolder(),
   });
-  const newNoteBtn = el<HTMLButtonElement>("button.btn.go", {
+  // Same `.btn.ghost.wide` as Maintenance's "Check for updates" (settings.ts) — a full-width
+  // action button pinned above the list it acts on, not a footer chasing a growing note list.
+  const newNoteBtn = el<HTMLButtonElement>("button.btn.ghost.wide", {
     type: "button",
     text: "New note",
     onClick: () => void addNote(),
@@ -161,12 +163,7 @@ function paintSidebar(): void {
     list.appendChild(el("p.empty", { text: "Nothing here yet." }));
   }
 
-  appendChildren(
-    sidebarEl,
-    el("div.notes-sidebar-head", {}, [crumbBar, newFolderBtn]),
-    list,
-    el("div.notes-sidebar-foot", {}, [newNoteBtn])
-  );
+  appendChildren(sidebarEl, el("div.notes-sidebar-top", {}, [newNoteBtn]), el("div.notes-sidebar-head", {}, [crumbBar, newFolderBtn]), list);
 }
 
 function breadcrumbTrail(folderId: string | null): Array<{ id: string | null; name: string }> {

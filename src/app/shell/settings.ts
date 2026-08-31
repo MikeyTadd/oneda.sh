@@ -404,7 +404,7 @@ function passkeysBlock(): HTMLElement {
   // not a bare label — the one control on this screen that starts a WebAuthn ceremony gets
   // the same accent-outlined treatment there, not a plain ghost button borrowed from
   // Maintenance's own (unrelated) pair of boxed actions.
-  const addBtn = el<HTMLButtonElement>("button.btn.passkey", { type: "button" });
+  const addBtn = el<HTMLButtonElement>("button.btn.passkey.compact", { type: "button" });
   addBtn.innerHTML = iconSvg(ICONS.passkey ?? "", "ico");
   appendChildren(addBtn, el("span", { text: "Add a passkey" }));
   addBtn.addEventListener("click", () => openAddPasskeySheet(paintPasskeys));
@@ -415,7 +415,7 @@ function passkeysBlock(): HTMLElement {
       text: "What actually gets you in. Add a second one before revoking the first, the same way you'd cut a spare key before losing the original — there's always a recovery phrase behind both, but that's the fallback, not the plan.",
     }),
     rows,
-    addBtn,
+    el("div.pk-actions", {}, [addBtn]),
   ]);
 }
 
@@ -430,13 +430,64 @@ function passkeyRow(passkey: Passkey, onChanged: () => void): HTMLElement {
 
   const actions = passkey.revokedAt
     ? []
-    : [el("button.chip.act", { type: "button", text: "Revoke", onClick: () => openRevokePasskeyConfirm(passkey, onChanged) })];
+    : [
+        el("button.chip.act", { type: "button", text: "Rename", onClick: () => openRenamePasskeySheet(passkey, onChanged) }),
+        el("button.chip.act", { type: "button", text: "Revoke", onClick: () => openRevokePasskeyConfirm(passkey, onChanged) }),
+      ];
 
   return el("div.row", {}, [
     icon("passkey"),
     el("div.who", {}, [nameLine, el("div.sub", { text: sub })]),
     el("div.device-actions", {}, actions),
   ]);
+}
+
+/** The platform's own guess at registration (guessDeviceLabel, device-label.ts) is only ever
+ * "iPhone", "Mac", etc. — the same label for the device it was created on and for every other
+ * device the same synced credential answers for since, with nothing to tell them apart. This
+ * is the same fix the device list already has (openRenameSheet, above), just for the
+ * credential rather than the physical device it's currently answering from. */
+function openRenamePasskeySheet(passkey: Passkey, onChanged: () => void): void {
+  const node = openSheet("confirm", { label: "Rename passkey" });
+  const input = el<HTMLInputElement>("input.text-field", { type: "text", value: passkey.deviceLabel, maxlength: 60 });
+  const err = el("p.err", { text: "" });
+
+  const save = el<HTMLButtonElement>("button.btn.go", {
+    type: "button",
+    text: "Save",
+    onClick: async () => {
+      const deviceLabel = input.value.trim();
+      if (!deviceLabel) {
+        err.textContent = "Give it a name.";
+        return;
+      }
+      save.disabled = true;
+      const res = await fetch(`/api/passkeys/${encodeURIComponent(passkey.id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deviceLabel }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        save.disabled = false;
+        err.textContent = "Couldn't save that — try again.";
+        return;
+      }
+      node.close();
+      onChanged();
+    },
+  });
+
+  appendChildren(
+    node,
+    el("div.sheet-inner", {}, [
+      sheetHead(node, "Rename passkey", passkey.deviceLabel),
+      el("div.sheet-scroll", {}, [input, err]),
+      sheetFoot([el("button.btn.ghost", { type: "button", text: "Cancel", onClick: () => node.close() }), save]),
+    ])
+  );
+  input.focus();
+  input.select();
 }
 
 function openRevokePasskeyConfirm(passkey: Passkey, onChanged: () => void): void {

@@ -529,6 +529,10 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
   if (revokeMatch?.[1] && request.method === "POST") {
     return revokePasskey(env, session, decodeURIComponent(revokeMatch[1]));
   }
+  const renamePasskeyMatch = url.pathname.match(/^\/api\/passkeys\/([^/]+)$/);
+  if (renamePasskeyMatch?.[1] && request.method === "PATCH") {
+    return renamePasskey(request, env, session, decodeURIComponent(renamePasskeyMatch[1]));
+  }
 
   if (url.pathname === "/api/tile-records" && request.method === "GET") {
     return listTileRecords(request, env, session);
@@ -748,4 +752,24 @@ async function revokePasskey(env: Env, session: SessionRow, credentialId: string
 
   await env.DB.prepare(`UPDATE credentials SET revoked_at = ? WHERE id = ?`).bind(Date.now(), credentialId).run();
   return Response.json({ ok: true });
+}
+
+/** The credential's `device_label` is only ever the platform's own guess at registration
+ * time (guessDeviceLabel, src/app/shell/device-label.ts) — "iPhone" for every iPhone that's
+ * ever created one, with no way to tell "my iPhone's own keychain" apart from "iPhone,
+ * relayed from someone else's" without renaming it, the same way a device already can. */
+async function renamePasskey(request: Request, env: Env, session: SessionRow, credentialId: string): Promise<Response> {
+  const body = await request.json<{ deviceLabel: string }>();
+  const deviceLabel = (body.deviceLabel ?? "").trim().slice(0, 60);
+  if (!deviceLabel) {
+    return new Response("a name is required", { status: 400 });
+  }
+
+  const result = await env.DB.prepare(`UPDATE credentials SET device_label = ? WHERE id = ? AND user_id = ?`)
+    .bind(deviceLabel, credentialId, session.user_id)
+    .run();
+  if (result.meta.changes === 0) {
+    return new Response("not found", { status: 404 });
+  }
+  return Response.json({ ok: true, deviceLabel });
 }

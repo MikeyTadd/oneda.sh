@@ -111,14 +111,14 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   const rail = el("nav#rail", { "aria-label": "Primary" });
   const railBrand = el("div.rail-brand");
   railBrand.innerHTML = MARK_SVG;
-  appendChildren(railBrand, el("span", { text: "oneda" }));
+  appendChildren(railBrand, el("span.eyebrow", { text: "oneda" }));
   appendChildren(rail, railBrand, el("div.rail-nav#rail-nav"));
 
   const railFoot = el("div.rail-foot");
-  const customiseBtn = el("button#rail-customise", { type: "button" });
+  const customiseBtn = el("button.rail-edit#rail-edit", { type: "button" });
   customiseBtn.innerHTML = iconSvg(ICONS.more ?? "", "ico");
   appendChildren(customiseBtn, el("span", { text: "Customise navigation" }));
-  const settingsLink = el("a", { href: "#/settings", "data-tab": "settings" });
+  const settingsLink = el("a.rail-edit.rail-cog", { href: "#/settings", "data-tab": "settings" });
   settingsLink.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
   appendChildren(settingsLink, el("span", { text: "Settings" }));
   appendChildren(railFoot, customiseBtn, settingsLink);
@@ -136,7 +136,7 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   const who = el("div.bar-who");
   appendChildren(who, el("span.title#appbar-title", { text: "" }));
   const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
-  const gear = el("a", { href: "#/settings", "aria-label": "Settings" });
+  const gear = el("a.bar-bell", { href: "#/settings", "aria-label": "Settings" });
   gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
   appendChildren(appbar, brand, who, appbarBell, gear);
   appendChildren(appbarWrap, appbar);
@@ -148,7 +148,7 @@ function buildChrome(root: HTMLElement, orderedIds: string[]): void {
   const topWho = el("div.bar-who");
   appendChildren(topWho, el("span.title#topbar-title", { text: "" }));
   const topbarBell = el("button.bar-bell#topbar-bell", { type: "button", "aria-label": "Alerts" });
-  appendChildren(topbar, topWho, topbarBell);
+  appendChildren(topbar, topWho, el("span.grow"), topbarBell);
   appendChildren(topbarWrap, topbar);
 
   const views = el("main#views");
@@ -266,7 +266,7 @@ function wireLayoutSwitch(): void {
  * offer. The phone's More tab opens the overflow sheet, with the editor
  * one row further down it. Both live in ./nav-edit.ts. */
 function wireMoreSheet(navEdit: NavEditDeps): void {
-  document.getElementById("rail-customise")?.addEventListener("click", () => {
+  document.getElementById("rail-edit")?.addEventListener("click", () => {
     openMoreSheet(navEdit, { straightToEditor: true });
   });
   document.getElementById("tabbar")?.addEventListener("click", (e) => {

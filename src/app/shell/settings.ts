@@ -136,7 +136,7 @@ function alertsBlock(): HTMLElement {
 
   const paint = () => {
     const dwellSeconds = Math.round(prefs.alertDwellMs / 1000);
-    const select = el<HTMLSelectElement>("select.pref-select", {
+    const select = el<HTMLSelectElement>("select.dwell", {
       "aria-label": "How long an alert stays on screen",
       onChange: (event: Event) => {
         const value = Number((event.target as HTMLSelectElement).value);

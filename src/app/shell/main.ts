@@ -18,6 +18,10 @@ export interface StartOptions {
 }
 
 export async function start({ dek }: StartOptions): Promise<void> {
+  // Before anything paints: the shell must never be visible unstyled, and the
+  // lock screen's own stylesheet must not survive into it (see below).
+  await loadShellStylesheet();
+
   const storage = createEncryptedStorage(dek);
   // Follow the page's own scheme rather than hardcoding wss: — over plain http (a local
   // `wrangler dev` run) a wss: URL fails the TLS handshake and the sync socket never opens.
@@ -25,8 +29,18 @@ export async function start({ dek }: StartOptions): Promise<void> {
   const syncQueue = createSyncQueue(`${wsScheme}://${location.host}/sync`);
 
   await mountShell(document.body, { storage, syncQueue });
+  dropLockScreenStyles();
+}
 
-  loadShellStylesheet();
+/** The pre-auth lock screen styles itself from an inline <style> in
+ * public/index.html. mountShell replaces the body, but that block lives in the
+ * head and outlives it — and it is not scoped, so its `.mark` (a 64px centred
+ * squircle) and its `body` (a centred, non-scrolling flex box) go on applying
+ * to the app underneath the real stylesheet. The rail's brand mark wearing
+ * `margin: 0 auto` is what gave this away. The block has done its job by the
+ * time the shell is up, so it goes. */
+function dropLockScreenStyles(): void {
+  document.getElementById("lock-css")?.remove();
 }
 
 /** The pre-auth shell (public/shell/index.html) links no post-auth CSS —
@@ -34,11 +48,17 @@ export async function start({ dek }: StartOptions): Promise<void> {
  * here rather than paid for by every anonymous visitor. Served from the
  * same session-gated route as this module (serveGatedBundle,
  * src/worker/index.ts), built alongside it by scripts/build-app.mjs. */
-function loadShellStylesheet(): void {
-  if (document.getElementById("shell-css")) return;
-  const link = document.createElement("link");
-  link.id = "shell-css";
-  link.rel = "stylesheet";
-  link.href = "/app/shell.css";
-  document.head.appendChild(link);
+function loadShellStylesheet(): Promise<void> {
+  if (document.getElementById("shell-css")) return Promise.resolve();
+  return new Promise((resolve) => {
+    const link = document.createElement("link");
+    link.id = "shell-css";
+    link.rel = "stylesheet";
+    link.href = "/app/shell.css";
+    // Resolve either way: a stylesheet that fails to load is a broken-looking
+    // app, but hanging here would be a blank one.
+    link.addEventListener("load", () => resolve(), { once: true });
+    link.addEventListener("error", () => resolve(), { once: true });
+    document.head.appendChild(link);
+  });
 }

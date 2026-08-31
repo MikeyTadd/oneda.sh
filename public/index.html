@@ -3,7 +3,31 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>onedash</title>
+  <title>onedash — personal dashboard</title>
+  <link rel="canonical" href="https://oneda.sh/" />
+  <!-- Enough for a crawler or a filtering service to file this correctly rather
+       than as an unknown domain, which is what gets a site blocked by default.
+       It describes what the site is and nothing about how it works: no routes,
+       no protocol, no schema (section 13.3). -->
+  <meta name="description" content="onedash is a private, end-to-end encrypted personal dashboard — notes, tasks, reminders and calendar in one place, readable only on its owner's own devices." />
+  <meta name="robots" content="index, follow" />
+  <meta name="application-name" content="onedash" />
+  <meta name="apple-mobile-web-app-title" content="onedash" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="color-scheme" content="dark" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="onedash" />
+  <meta property="og:title" content="onedash — personal dashboard" />
+  <meta property="og:description" content="A private, end-to-end encrypted personal dashboard. Sign in with a passkey." />
+  <meta property="og:url" content="https://oneda.sh/" />
+  <meta property="og:image" content="https://oneda.sh/icons/icon-512.png" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="onedash — personal dashboard" />
+  <meta name="twitter:description" content="A private, end-to-end encrypted personal dashboard. Sign in with a passkey." />
+  <meta name="twitter:image" content="https://oneda.sh/icons/icon-512.png" />
+
   <link rel="manifest" href="/shell/manifest.json" />
   <meta name="theme-color" content="#161826" />
   <link rel="apple-touch-icon" href="/icons/icon-180.png" />
@@ -83,6 +107,21 @@
          first account exists, so this is only ever useful once, on a fresh deployment. -->
     <button class="setup-link" id="setup" type="button">First time? Set up your passkey</button>
   </div>
+  <!-- Says the same thing in the form the categorisers actually parse. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "onedash",
+    "url": "https://oneda.sh/",
+    "applicationCategory": "ProductivityApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires a browser with WebAuthn passkey support",
+    "description": "A private, end-to-end encrypted personal dashboard for one person's notes, tasks, reminders and calendar.",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "GBP" }
+  }
+  </script>
   <script type="module" src="/shell/auth.js"></script>
 </body>
 </html>

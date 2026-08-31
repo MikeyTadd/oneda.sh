@@ -10,7 +10,7 @@
 // tile model rather than copied from that project.
 
 import type { EncryptedStorage } from "../storage/db.js";
-import type { SyncQueue } from "../sync/queue.js";
+import type { SyncQueue, SyncStatus } from "../sync/queue.js";
 import { loadRegistry, loadTile, mountInstalledTiles } from "../tiles/registry.js";
 import type { TileManifest } from "../tiles/types.js";
 import { configureAlerts, connectAlerts } from "./alerts.js";
@@ -86,6 +86,10 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   container.appendChild(settingsView);
   renderSettings(settingsView, { ...navEdit, appName: APP_NAME });
 
+  // onStatus fires immediately with the current value, so the chip is never
+  // blank waiting for the first change.
+  deps.syncQueue.onStatus(paintConnection);
+
   paintNav(nav, orderedIds);
   wireRouter(nav, () => orderedIds);
   wireLayoutSwitch();
@@ -103,6 +107,33 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   navigate(location.hash.replace(/^#\/?/, "") || defaultRoute(orderedIds));
 }
 
+/** Whether the sync socket is up, said in the chrome rather than left to be
+ * inferred from data quietly going stale. Built once per layout — both are in
+ * the DOM at all times and only one of them is visible, so the chip is
+ * duplicated rather than moved. Wears the system's pill, with its states mapped
+ * onto the ones it already has: green up, amber trying, red down. */
+function connectionChip(where: "rail" | "appbar"): HTMLElement {
+  const chip = el(`span.live-pill#conn-${where}`, { role: "status", "aria-live": "polite" });
+  appendChildren(chip, el("span.bulb"), el("span.conn-label", { text: "" }));
+  return chip;
+}
+
+const CONNECTION_COPY: Record<SyncStatus, { cls: string; label: string }> = {
+  online: { cls: "live", label: "Synced" },
+  connecting: { cls: "hold", label: "Connecting" },
+  offline: { cls: "red", label: "Offline" },
+};
+
+function paintConnection(status: SyncStatus): void {
+  const { cls, label } = CONNECTION_COPY[status];
+  forEachEl(document.querySelectorAll<HTMLElement>("#conn-rail, #conn-appbar"), (chip) => {
+    chip.className = `live-pill ${cls}`;
+    chip.title = `Sync: ${label}`;
+    const text = chip.querySelector(".conn-label");
+    if (text) text.textContent = label;
+  });
+}
+
 function buildChrome(root: HTMLElement): void {
   root.innerHTML = "";
 
@@ -110,7 +141,7 @@ function buildChrome(root: HTMLElement): void {
 
   const rail = el("nav#rail", { "aria-label": "Primary" });
   const railBrand = el("div.rail-brand");
-  appendChildren(railBrand, el("span.eyebrow", { text: "oneda" }));
+  appendChildren(railBrand, connectionChip("rail"));
   appendChildren(rail, railBrand, el("div.rail-nav#rail-nav"));
 
   const railFoot = el("div.rail-foot");
@@ -135,7 +166,7 @@ function buildChrome(root: HTMLElement): void {
   const appbarBell = el("button.bar-bell#appbar-bell", { type: "button", "aria-label": "Alerts" });
   const gear = el("a.bar-bell", { href: "#/settings", "aria-label": "Settings" });
   gear.innerHTML = iconSvg(ICONS.settings ?? "", "ico");
-  appendChildren(appbar, who, appbarBell, gear);
+  appendChildren(appbar, who, connectionChip("appbar"), appbarBell, gear);
   appendChildren(appbarWrap, appbar);
 
   // Desktop top bar: no gear here (Settings is a rail destination), so the

@@ -33,11 +33,22 @@ export class UserSession implements DurableObject {
     this.state.acceptWebSocket(server);
     this.sockets.add(server);
 
+    // The client's keep-alive (../../app/sync/queue.ts). Answered by the runtime
+    // itself rather than by webSocketMessage, so a heartbeat never wakes this
+    // object from hibernation — a ping that billed for a wake-up every 25
+    // seconds per device would cost more than the dead sockets it detects.
+    this.state.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+
     return new Response(null, { status: 101, webSocket: client });
   }
 
   // Durable Object WebSocket hibernation API handlers (state.acceptWebSocket above).
   async webSocketMessage(ws: WebSocket, message: ArrayBuffer | string): Promise<void> {
+    // Text frames are the keep-alive's business, and the runtime already answered
+    // it above without waking this object — anything text that still reaches here
+    // is not a record and must not be broadcast as one.
+    if (typeof message === "string") return;
+
     // Every inbound message is an opaque ciphertext envelope: { dataNamespace, seq, ciphertext }.
     // The DO's only job is to persist it (D1/R2, via env bindings — wired in index.ts once the
     // sync-queue wire format is finalized) and broadcast it to this user's other connected

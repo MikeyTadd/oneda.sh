@@ -171,28 +171,21 @@ function alertsBlock(): HTMLElement {
         ]),
         select,
       ]),
-      el("div.rows", {}, [
-        el(
-          "button.row",
-          {
-            type: "button",
-            onClick: () =>
-              alert({
-                source: "settings-test",
-                title: "Test alert",
-                detail: "This is what an in-app alert looks like. It is now in the bell too.",
-              }),
-          },
-          [
-            icon("bell"),
-            el("div.who", {}, [
-              el("div.name", { text: "Send a test alert" }),
-              el("div.sub", { text: "Raises a real one, so the bell picks it up as well" }),
-            ]),
-            el("span.chev", { text: "›" }),
-          ]
-        ),
-      ])
+      // A button, not a tappable row. A row is a way through to somewhere and
+      // says so with a chevron; this fires an action and stays put, and giving
+      // it a whole row's hit area made the entire width light up edge to edge
+      // for something the size of a word.
+      el("p.block-note", { text: "Raises a real one, so the bell picks it up as well." }),
+      el("button.btn.ghost.wide", {
+        type: "button",
+        text: "Send a test alert",
+        onClick: () =>
+          alert({
+            source: "settings-test",
+            title: "Test alert",
+            detail: "This is what an in-app alert looks like. It is now in the bell too.",
+          }),
+      })
     );
   };
 

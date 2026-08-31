@@ -9,8 +9,10 @@
 // bell fed by a generic alert queue — written fresh here against oneda's
 // tile model rather than copied from that project.
 
+import type { BlobStore } from "../storage/blobs.js";
 import type { EncryptedStorage } from "../storage/db.js";
 import type { SyncQueue, SyncStatus } from "../sync/queue.js";
+import { hydrateNamespace } from "../sync/hydrate.js";
 import { loadRegistry, loadTile, mountInstalledTiles } from "../tiles/registry.js";
 import type { TileManifest } from "../tiles/types.js";
 import { configureAlerts, connectAlerts } from "./alerts.js";
@@ -30,13 +32,26 @@ const APP_NAME = "oneda";
 export interface ShellDeps {
   storage: EncryptedStorage;
   syncQueue: SyncQueue;
+  blobs: BlobStore;
 }
 
 /** Builds the shell chrome into `root` (normally `document.body`), mounts
  * every installed tile, and wires up routing, the bell and toasts. Call
  * once after the DEK is available (never before the app-level unlock). */
 export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<void> {
-  const registryEntries = await loadRegistry({ storage: deps.storage, syncQueue: deps.syncQueue, dataNamespace: "shell" });
+  // Before anything reads local storage for it: a fresh device (or a cleared one) has to
+  // catch up on the shell's own durably-stored state (registry, nav order, prefs) before the
+  // registry load two lines down can mean anything (sync/hydrate.ts).
+  await hydrateNamespace(deps.storage, "shell");
+
+  // Before renderSettings below, not after: that call reads prefs.reauthIdleMs synchronously
+  // to pick the idle-lock <select>'s starting option, and nothing repaints it afterwards on a
+  // plain local load (only an incoming sync update does, via prefs.ts's own listener) — so
+  // loading prefs after painting Settings meant the dropdown always showed the *default*
+  // until the reader changed something, indistinguishable from "the setting didn't save".
+  await loadPrefs(deps.storage, deps.syncQueue);
+
+  const registryEntries = await loadRegistry({ storage: deps.storage, syncQueue: deps.syncQueue, blobs: deps.blobs, dataNamespace: "shell" });
   const tileIds = [...registryEntries].sort((a, b) => a.order - b.order).map((e) => e.tileId);
 
   // The registry only stores ids + order (../tiles/registry.ts); manifests
@@ -63,7 +78,7 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   buildChrome(root);
 
   const container = document.getElementById("views")!;
-  await mountInstalledTiles(container, { storage: deps.storage, syncQueue: deps.syncQueue }, registryEntries);
+  await mountInstalledTiles(container, { storage: deps.storage, syncQueue: deps.syncQueue, blobs: deps.blobs }, registryEntries);
   // mountInstalledTiles marks each section with data-tile-id and
   // data-encryption-tier but knows nothing about routing — that's this
   // shell's concern, so the view-toggling class is added here.
@@ -98,7 +113,6 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   wireLayoutSwitch();
   wireMoreSheet(navEdit);
 
-  await loadPrefs(deps.storage, deps.syncQueue);
   configureAlerts({ dwellMs: prefs.alertDwellMs, toasts: prefs.alertToasts });
   window.addEventListener("prefs-changed", (event) => {
     const key = (event as CustomEvent<{ key?: string }>).detail?.key;

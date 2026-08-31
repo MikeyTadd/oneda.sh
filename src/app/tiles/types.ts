@@ -2,6 +2,7 @@
 // and nothing else touches the shell — adding a tile means writing the module and adding
 // its id to the registry (section 4.2), no shell changes.
 
+import type { BlobStore } from "../storage/blobs.js";
 import type { EncryptedStorage } from "../storage/db.js";
 import type { SyncQueue } from "../sync/queue.js";
 
@@ -27,6 +28,11 @@ export interface TileContext {
   dataNamespace: string;
   storage: EncryptedStorage;
   syncQueue: SyncQueue;
+  /** For content too large or free-form for storage/sync's small structured records (a
+   * note's markdown body) — encrypted the same way, under the same DEK, just held in R2
+   * instead of D1 (section 3.3). Always provided, like storage/syncQueue, even though most
+   * tiles never call it. */
+  blobs: BlobStore;
 }
 
 export interface TileManifest {

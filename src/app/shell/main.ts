@@ -4,6 +4,7 @@
 // sync layers together and hands off to the shell (shell.ts) once they're
 // ready; it owns no UI of its own.
 
+import { createBlobStore } from "../storage/blobs.js";
 import { createEncryptedStorage } from "../storage/db.js";
 import { createSyncQueue } from "../sync/queue.js";
 import { mountShell } from "./shell.js";
@@ -29,8 +30,9 @@ export async function start({ dek }: StartOptions): Promise<void> {
   // Threaded through so every put() also reaches every other device (universal sync,
   // section 1) — see storage/db.ts.
   const storage = createEncryptedStorage(dek, syncQueue);
+  const blobs = createBlobStore(dek);
 
-  await mountShell(document.body, { storage, syncQueue });
+  await mountShell(document.body, { storage, syncQueue, blobs });
   dropLockScreenStyles();
 }
 

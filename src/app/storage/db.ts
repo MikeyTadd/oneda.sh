@@ -46,11 +46,15 @@ export interface EncryptedStorage {
   get<T>(key: string): Promise<T | undefined>;
   delete(key: string): Promise<void>;
   listKeys(prefix: string): Promise<string[]>;
-  /** Applies a record that arrived over the sync queue from another device: persists its
-   * ciphertext as-is (it was already encrypted under this same DEK by the sending device,
-   * so re-encrypting here would be pointless) and returns the decrypted value for whatever
-   * local code needs to react (a tile's onSync, a shell module's own change listener). Never
-   * pushes back to sync — that would echo the write straight back to its own sender. */
+  /** Applies a record that arrived over the sync queue or a hydration pull (sync/hydrate.ts)
+   * from another device: persists its ciphertext as-is (it was already encrypted under this
+   * same DEK by the sending device, so re-encrypting here would be pointless) and returns the
+   * decrypted value for whatever local code needs to react (a tile's onSync, a shell module's
+   * own change listener). Skipped — returns the *local* value unchanged — when the local
+   * envelope is already at least as new: there's no CRDT merge yet (registry.ts), so this is
+   * the one guard standing between an offline edit and a hydration pull silently clobbering it
+   * with what was already known before this device went offline. Never pushes back to sync —
+   * that would echo the write straight back to its own sender. */
   receiveIncoming<T>(record: SyncRecord): Promise<T>;
 }
 
@@ -60,6 +64,15 @@ async function writeEnvelope(db: IDBDatabase, envelope: StoredEnvelope): Promise
     tx.objectStore(STORE).put(envelope);
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function readEnvelope(db: IDBDatabase, key: string): Promise<StoredEnvelope | undefined> {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result as StoredEnvelope | undefined);
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -91,6 +104,10 @@ export function createEncryptedStorage(dek: CryptoKey, sync?: SyncQueue): Encryp
     async receiveIncoming<T>(record: SyncRecord): Promise<T> {
       const db = await openDb();
       const key = namespacedKey(record.dataNamespace, record.recordId);
+      const existing = await readEnvelope(db, key);
+      if (existing && existing.updatedAt >= record.updatedAt) {
+        return decryptRecord<T>(dek, existing.ciphertext, existing.iv);
+      }
       const envelope: StoredEnvelope = {
         key,
         iv: record.iv,
@@ -103,12 +120,7 @@ export function createEncryptedStorage(dek: CryptoKey, sync?: SyncQueue): Encryp
 
     async get<T>(key: string): Promise<T | undefined> {
       const db = await openDb();
-      const envelope = await new Promise<StoredEnvelope | undefined>((resolve, reject) => {
-        const tx = db.transaction(STORE, "readonly");
-        const req = tx.objectStore(STORE).get(key);
-        req.onsuccess = () => resolve(req.result as StoredEnvelope | undefined);
-        req.onerror = () => reject(req.error);
-      });
+      const envelope = await readEnvelope(db, key);
       if (!envelope) return undefined;
       return decryptRecord<T>(dek, envelope.ciphertext, envelope.iv);
     },

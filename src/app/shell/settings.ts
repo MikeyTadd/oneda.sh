@@ -400,11 +400,14 @@ function passkeysBlock(): HTMLElement {
   };
   paintPasskeys();
 
-  const addBtn = el<HTMLButtonElement>("button.btn.ghost.wide", {
-    type: "button",
-    text: "Add a passkey",
-    onClick: () => openAddPasskeySheet(paintPasskeys),
-  });
+  // F1 Apex's own passkey button (views/settings.js's passkeyButton): the fingerprint icon,
+  // not a bare label — the one control on this screen that starts a WebAuthn ceremony gets
+  // the same accent-outlined treatment there, not a plain ghost button borrowed from
+  // Maintenance's own (unrelated) pair of boxed actions.
+  const addBtn = el<HTMLButtonElement>("button.btn.passkey", { type: "button" });
+  addBtn.innerHTML = iconSvg(ICONS.passkey ?? "", "ico");
+  appendChildren(addBtn, el("span", { text: "Add a passkey" }));
+  addBtn.addEventListener("click", () => openAddPasskeySheet(paintPasskeys));
 
   return el("section.set-block", {}, [
     blockHead("Passkeys"),
@@ -412,7 +415,7 @@ function passkeysBlock(): HTMLElement {
       text: "What actually gets you in. Add a second one before revoking the first, the same way you'd cut a spare key before losing the original — there's always a recovery phrase behind both, but that's the fallback, not the plan.",
     }),
     rows,
-    el("div.maint", {}, [addBtn]),
+    addBtn,
   ]);
 }
 
@@ -430,7 +433,7 @@ function passkeyRow(passkey: Passkey, onChanged: () => void): HTMLElement {
     : [el("button.chip.act", { type: "button", text: "Revoke", onClick: () => openRevokePasskeyConfirm(passkey, onChanged) })];
 
   return el("div.row", {}, [
-    icon("device"),
+    icon("passkey"),
     el("div.who", {}, [nameLine, el("div.sub", { text: sub })]),
     el("div.device-actions", {}, actions),
   ]);

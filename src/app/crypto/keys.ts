@@ -131,3 +131,20 @@ export async function decryptRecord<T = unknown>(dek: CryptoKey, ciphertext: Arr
   const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, dek, ciphertext);
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
+
+/** Plain UTF-8 encryption under the DEK, no JSON envelope — for a body that's already text
+ * (a note's markdown, tiles/notes/index.ts) rather than a small structured record. Skipping
+ * JSON.stringify avoids escaping every quote and backslash in what is, for a note, most of
+ * its own content, and matters for anything R2-bound (storage/blobs.ts): what's uploaded is
+ * the exact bytes a plain .md file would have. */
+export async function encryptText(dek: CryptoKey, text: string): Promise<{ ciphertext: ArrayBuffer; iv: Uint8Array }> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const bytes = new TextEncoder().encode(text);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, dek, bytes);
+  return { ciphertext, iv };
+}
+
+export async function decryptText(dek: CryptoKey, ciphertext: ArrayBuffer, iv: Uint8Array): Promise<string> {
+  const bytes = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv as BufferSource }, dek, ciphertext);
+  return new TextDecoder().decode(bytes);
+}

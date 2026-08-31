@@ -2,6 +2,7 @@
 // sync, section 1 guiding principles) — this module only handles dynamic loading; the
 // list of installed ids is read from/written to encrypted storage like any other record.
 
+import { hydrateNamespace } from "../sync/hydrate.js";
 import type { Tile, TileContext } from "./types.js";
 
 /** Static map of importable tile modules, keyed by id. Each entry is a dynamic import so
@@ -46,6 +47,10 @@ export async function mountInstalledTiles(
   const sorted = [...entries].sort((a, b) => a.order - b.order);
   for (const entry of sorted) {
     const tile = await loadTile(entry.tileId);
+    // Before init() reads local storage for its own records — a fresh device otherwise
+    // renders an empty tile indistinguishable from one that's genuinely never had anything
+    // written to it (sync/hydrate.ts).
+    await hydrateNamespace(baseCtx.storage, tile.dataNamespace);
     const tileCtx: TileContext = { ...baseCtx, dataNamespace: tile.dataNamespace };
     await tile.init(tileCtx);
 

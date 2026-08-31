@@ -122,6 +122,10 @@ async function handleSyncUpgrade(request: Request, env: Env): Promise<Response> 
 
   const forwardUrl = new URL(request.url);
   forwardUrl.pathname = "/ws";
+  // The DO's id is derived from this same string (idFromName above), but a Durable Object
+  // has no way to ask "what name was I looked up by" — this is the only way it learns whose
+  // session it is, which persist() (UserSession.ts) needs for the tile_records rows it writes.
+  forwardUrl.searchParams.set("userId", session.user_id);
   return stub.fetch(new Request(forwardUrl, request));
 }
 
@@ -526,9 +530,79 @@ async function handleApi(request: Request, env: Env, url: URL): Promise<Response
     return revokePasskey(env, session, decodeURIComponent(revokeMatch[1]));
   }
 
-  // TODO: integration OAuth callbacks (section 9d), R2 upload/download proxying
-  // (section 3.3), article-reader proxy (section 9a).
+  if (url.pathname === "/api/tile-records" && request.method === "GET") {
+    return listTileRecords(request, env, session);
+  }
+
+  const blobMatch = url.pathname.match(/^\/api\/blobs\/([^/]+)$/);
+  if (blobMatch?.[1]) {
+    const key = decodeURIComponent(blobMatch[1]);
+    if (request.method === "PUT") return putBlob(request, env, session, key);
+    if (request.method === "GET") return getBlob(env, session, key);
+    if (request.method === "DELETE") return deleteBlob(env, session, key);
+  }
+
+  // TODO: integration OAuth callbacks (section 9d), article-reader proxy (section 9a).
   return new Response("not found", { status: 404 });
+}
+
+interface TileRecordRow {
+  id: string;
+  ciphertext: D1Blob;
+  updated_at: number;
+}
+
+/** The durable half of sync (UserSession.ts's persist()) — everything the server has stored
+ * for one namespace, for a device that's never seen it (sync/hydrate.ts). `id` is
+ * `${dataNamespace}:${recordId}`; since dataNamespace is a fixed tile id that never itself
+ * contains a colon, slicing it off the front is exactly reversing how it was assembled,
+ * whatever colons recordId itself might contain (a note's own key nests a "note:"/"folder:"
+ * prefix inside its recordId, section 4.1). */
+async function listTileRecords(request: Request, env: Env, session: SessionRow): Promise<Response> {
+  const dataNamespace = new URL(request.url).searchParams.get("dataNamespace");
+  if (!dataNamespace) return new Response("dataNamespace required", { status: 400 });
+
+  const rows = await env.DB.prepare(
+    `SELECT id, ciphertext, updated_at FROM tile_records
+     WHERE user_id = ? AND data_namespace = ? AND deleted_at IS NULL
+     ORDER BY seq ASC`
+  )
+    .bind(session.user_id, dataNamespace)
+    .all<TileRecordRow>();
+
+  return Response.json(
+    rows.results.map((row) => ({
+      dataNamespace,
+      recordId: row.id.slice(dataNamespace.length + 1),
+      wrapped: bytesToBase64Url(fromD1Blob(row.ciphertext)),
+      updatedAt: row.updated_at,
+    }))
+  );
+}
+
+/** Namespaced by account so one user's opaque key can never collide with — or be guessed
+ * into overwriting or reading — another's, on top of the key itself already being a random
+ * UUID the client generates and never anything content-revealing (section 3.3). This Worker
+ * only ever proxies bytes; it has no DEK and never will. */
+function blobR2Key(userId: string, key: string): string {
+  return `${userId}/${key}`;
+}
+
+async function putBlob(request: Request, env: Env, session: SessionRow, key: string): Promise<Response> {
+  const body = await request.arrayBuffer();
+  await env.BLOBS.put(blobR2Key(session.user_id, key), body);
+  return Response.json({ ok: true });
+}
+
+async function getBlob(env: Env, session: SessionRow, key: string): Promise<Response> {
+  const object = await env.BLOBS.get(blobR2Key(session.user_id, key));
+  if (!object) return new Response("not found", { status: 404 });
+  return new Response(object.body, { headers: { "content-type": "application/octet-stream" } });
+}
+
+async function deleteBlob(env: Env, session: SessionRow, key: string): Promise<Response> {
+  await env.BLOBS.delete(blobR2Key(session.user_id, key));
+  return Response.json({ ok: true });
 }
 
 interface DeviceRow {

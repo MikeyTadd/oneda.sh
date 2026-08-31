@@ -16,7 +16,7 @@ export function openAddPasskeySheet(onAdded: () => void): void {
   const node = openSheet("confirm", { label: "Add a passkey" });
   const lead = el("p.confirm-lead", {
     text:
-      "This registers a second, independent passkey — for a hardware key or a device that won't share this one's platform sync. You'll confirm your current passkey once, then create the new one.",
+      "Both passkeys unlock this exact same account and the exact same data — a passkey only gets you in, it doesn't own a separate copy of anything. The only reason to add one is a device that won't share this passkey's own sync (a hardware key, a different platform): a normal new device on the same iCloud Keychain or Google Password Manager already signs in with the one you have, no extra step needed. You'll confirm your current passkey once, then create the new one.",
   });
   const status = el("p.block-note", { text: "" });
   const err = el("p.err", { text: "" });

@@ -70,7 +70,7 @@ export async function startAuthentication(env: Env) {
   // derive the master key. Even encoded properly it shouldn't come from the server — the
   // salt decides which key gets derived (section 2.2), so letting a response dictate it
   // would let a tampered-with server steer the client onto a different master key. The
-  // salt is a fixed constant the client holds itself (public/shell/auth.js's PRF_SALT).
+  // salt is a fixed constant the client derives itself (public/shell/auth.js's prfSalt()).
   return generateAuthenticationOptions({
     rpID,
     userVerification: "required",
@@ -91,11 +91,4 @@ export async function finishAuthentication(
     expectedRPID: rpID,
     credential,
   });
-}
-
-/** Fixed per-purpose PRF salt (section 2.2) — same salt on every device so the same
- * passkey always re-derives the same master key. Add new named salts for future sub-keys
- * without disturbing this one. */
-export function prfSaltFor(purpose: "master-key"): Uint8Array {
-  return new TextEncoder().encode(`onedash:prf:${purpose}`).slice(0, 32);
 }

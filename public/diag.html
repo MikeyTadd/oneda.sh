@@ -38,10 +38,11 @@
   <p>Capability check runs automatically. The probes each create a throwaway passkey —
      delete any strays in Settings &rsaquo; Passwords afterwards.</p>
   <button id="probe-create">Probe create() with PRF</button>
-  <button id="probe-get">Probe get() with PRF</button>
+  <button id="probe-get">Probe get() with PRF (32-byte salt)</button>
+  <button id="probe-get-short">Probe get() with PRF (22-byte salt)</button>
   <pre id="out">running capability check…</pre>
 
-<script>
+<script type="module">
 const out = document.getElementById("out");
 const lines = [];
 
@@ -68,7 +69,11 @@ function report(line) {
   } catch {}
 }
 
-const PRF_SALT = new TextEncoder().encode("onedash:prf:master-key").slice(0, 32);
+const SALT_TEXT = new TextEncoder().encode("onedash:prf:master-key");
+// 32 bytes, matching the app. The short variant is kept alongside it so a probe can show
+// whether salt length is what the authenticator objects to.
+const salt32 = new Uint8Array(await crypto.subtle.digest("SHA-256", SALT_TEXT));
+const salt22 = SALT_TEXT;
 
 (async function capabilities() {
   lines.length = 0;
@@ -99,7 +104,7 @@ document.getElementById("probe-create").addEventListener("click", async () => {
         pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
         authenticatorSelection: { residentKey: "required", userVerification: "required" },
         attestation: "none",
-        extensions: { prf: { eval: { first: PRF_SALT } } },
+        extensions: { prf: { eval: { first: salt32 } } },
       },
     });
     log("create() credential.id", credential.id);
@@ -115,12 +120,26 @@ document.getElementById("probe-get").addEventListener("click", async () => {
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
         userVerification: "required",
-        extensions: { prf: { eval: { first: PRF_SALT } } },
+        extensions: { prf: { eval: { first: salt32 } } },
       },
     });
     log("get() credential.id", assertion.id);
-    log("get() extensionResults", assertion.getClientExtensionResults());
-  } catch (e) { log("get() threw", `${e.name}: ${e.message}`); }
+    log("get() extensionResults [32-byte salt]", assertion.getClientExtensionResults());
+  } catch (e) { log("get() threw [32-byte salt]", `${e.name}: ${e.message}`); }
+});
+
+document.getElementById("probe-get-short").addEventListener("click", async () => {
+  try {
+    log("probe-get-short", "starting… (22-byte salt, the length that was failing)");
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        userVerification: "required",
+        extensions: { prf: { eval: { first: salt22 } } },
+      },
+    });
+    log("get() extensionResults [22-byte salt]", assertion.getClientExtensionResults());
+  } catch (e) { log("get() threw [22-byte salt]", `${e.name}: ${e.message}`); }
 });
 </script>
 </body>

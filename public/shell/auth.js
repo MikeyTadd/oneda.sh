@@ -87,7 +87,7 @@ async function unlock() {
       // Set here, never taken from the response: the salt has to reach the authenticator as
       // real bytes (it can't survive JSON), and it decides which master key gets derived, so
       // the client owns it rather than trusting the server to name it (section 2.2).
-      extensions: { prf: { eval: { first: PRF_SALT } } },
+      extensions: { prf: { eval: { first: await prfSalt() } } },
     };
 
     step("credentials.get");
@@ -155,7 +155,7 @@ async function setup() {
       })),
       // Ask for the PRF output up front. Where the authenticator obliges (iOS 18+, Chrome)
       // that's the whole ceremony in one prompt and one tap.
-      extensions: { prf: { eval: { first: PRF_SALT } } },
+      extensions: { prf: { eval: { first: await prfSalt() } } },
     };
 
     step("credentials.create");
@@ -233,7 +233,20 @@ async function completeSetup(credential, prfOutput) {
 
 // --- WebAuthn PRF -> master key -> DEK (mirrors src/app/crypto/keys.ts) ---
 
-const PRF_SALT = new TextEncoder().encode("onedash:prf:master-key").slice(0, 32);
+// PRF rides on CTAP2's hmac-secret, which takes a 32-byte salt. The WebAuthn layer is
+// meant to hash whatever it's given to that length, but platforms disagree: Chromium
+// accepts a short one, Safari returns no PRF result at all — which is precisely the split
+// seen here. Hashing to exactly 32 bytes ourselves settles it.
+//
+// The previous `.slice(0, 32)` read as if it did this, but slice only truncates: the string
+// is 22 bytes, so it stayed 22. Keep in step with src/app/crypto/keys.ts.
+let prfSaltPromise = null;
+function prfSalt() {
+  prfSaltPromise ??= crypto.subtle
+    .digest("SHA-256", new TextEncoder().encode("onedash:prf:master-key"))
+    .then((buf) => new Uint8Array(buf));
+  return prfSaltPromise;
+}
 
 async function getPrfOutput(credentialId) {
   const assertion = await navigator.credentials.get({
@@ -241,7 +254,7 @@ async function getPrfOutput(credentialId) {
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       allowCredentials: [{ id: credentialId, type: "public-key" }],
       userVerification: "required",
-      extensions: { prf: { eval: { first: PRF_SALT } } },
+      extensions: { prf: { eval: { first: await prfSalt() } } },
     },
   });
   const prfOutput = assertion?.getClientExtensionResults().prf?.results?.first;
@@ -252,7 +265,7 @@ async function getPrfOutput(credentialId) {
 async function deriveMasterKeyFromPrf(prfOutput) {
   const hkdfKey = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: PRF_SALT, info: new TextEncoder().encode("onedash-master-key") },
+    { name: "HKDF", hash: "SHA-256", salt: await prfSalt(), info: new TextEncoder().encode("onedash-master-key") },
     hkdfKey,
     { name: "AES-GCM", length: 256 },
     false,

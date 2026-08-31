@@ -6,7 +6,17 @@
 // adding a second passkey or rotating the PRF path only means re-wrapping the DEK
 // (section 2.3).
 
-const PRF_SALT = new TextEncoder().encode("onedash:prf:master-key").slice(0, 32);
+// Exactly 32 bytes, because that is what CTAP2's hmac-secret (which PRF is built on)
+// takes, and not every platform hashes a shorter input up to length — Safari returns no
+// PRF result for one, Chromium accepts it. Must match public/shell/auth.js, which runs the
+// same derivation pre-auth.
+let prfSaltPromise: Promise<Uint8Array> | null = null;
+function prfSalt(): Promise<Uint8Array> {
+  prfSaltPromise ??= crypto.subtle
+    .digest("SHA-256", new TextEncoder().encode("onedash:prf:master-key"))
+    .then((buf) => new Uint8Array(buf));
+  return prfSaltPromise;
+}
 
 export interface DerivedIdentity {
   masterKey: CryptoKey;
@@ -21,7 +31,7 @@ export async function deriveMasterKey(credentialId: BufferSource): Promise<Crypt
       challenge: crypto.getRandomValues(new Uint8Array(32)),
       allowCredentials: [{ id: credentialId, type: "public-key" }],
       userVerification: "required",
-      extensions: { prf: { eval: { first: PRF_SALT } } } as unknown as AuthenticationExtensionsClientInputs,
+      extensions: { prf: { eval: { first: await prfSalt() } } } as unknown as AuthenticationExtensionsClientInputs,
     },
   })) as PublicKeyCredential | null;
 
@@ -36,7 +46,7 @@ export async function deriveMasterKey(credentialId: BufferSource): Promise<Crypt
   const hkdfKey = await crypto.subtle.importKey("raw", prfOutput, "HKDF", false, ["deriveKey"]);
 
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt: PRF_SALT, info: new TextEncoder().encode("onedash-master-key") },
+    { name: "HKDF", hash: "SHA-256", salt: (await prfSalt()) as BufferSource, info: new TextEncoder().encode("onedash-master-key") },
     hkdfKey,
     { name: "AES-GCM", length: 256 },
     false,

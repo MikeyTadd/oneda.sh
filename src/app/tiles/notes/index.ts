@@ -9,9 +9,12 @@
 // editor (the tile's mainCol), renderSide() owns the folder tree and note list — mirrored via
 // CSS (grid-template-columns, order) since here the narrow panel is navigation, not facts.
 
+import type * as Y from "yjs";
+import { base64UrlToBuffer } from "../../crypto/codec.js";
 import { appendChildren, clear, el } from "../../shell/dom.js";
 import { ICONS, iconSvg } from "../../shell/icons.js";
 import type { Tile, TileContext } from "../types.js";
+import { applyUpdate, textOf } from "./crdt.js";
 import { createNoteEditor, type NoteEditor } from "./editor.js";
 import {
   createFolder,
@@ -25,12 +28,17 @@ import {
   saveNote,
   type NotesState,
 } from "./store.js";
-import type { NoteFolder, NoteMeta } from "./types.js";
+import type { NoteFolder, NoteMeta, NoteUpdateRecord } from "./types.js";
 
 let ctx: TileContext;
 let state: NotesState = { folders: [], notes: [] };
 let currentFolderId: string | null = null;
 let currentNote: NoteMeta | null = null;
+/** The live Yjs document for whichever note is open — kept for the note's whole open session
+ * so every save's diff (store.ts's saveNote) lands on top of the actual merged state,
+ * including anything just merged in from another device via onSync below, not a stale one
+ * reloaded from scratch on every keystroke. */
+let currentNoteDoc: Y.Doc | null = null;
 let editor: NoteEditor | null = null;
 let titleInput: HTMLInputElement | null = null;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,10 +81,24 @@ const notesTile: Tile = {
     paintSidebar();
   },
 
-  onSync() {
-    // A remote change could be to any folder or note — a full reload is simple and correct;
-    // the list this repaints from is never more than a personal note collection, not
-    // something a re-fetch needs to be careful about the size of.
+  onSync(value: unknown) {
+    const record = value as { kind?: string };
+    if (record?.kind === "note-update") {
+      // The whole point of the CRDT (design doc §5.3, crdt.ts's own header): merge a remote
+      // edit into the live document immediately if this is the note currently open, so the
+      // next local save's diff lands on top of it instead of silently overwriting it. A
+      // note-update never changes what the folder/note list shows, so — unlike every other
+      // kind of change here — this deliberately skips the full reload/repaint below.
+      const update = record as NoteUpdateRecord;
+      if (update.noteId === currentNote?.id && currentNoteDoc) {
+        applyUpdate(currentNoteDoc, new Uint8Array(base64UrlToBuffer(update.update)));
+        editor?.setMarkdown(textOf(currentNoteDoc));
+      }
+      return;
+    }
+    // A remote change to a folder or note's own metadata — a full reload is simple and
+    // correct; the list this repaints from is never more than a personal note collection,
+    // not something a re-fetch needs to be careful about the size of.
     void loadAll(ctx).then((next) => {
       state = next;
       paintSidebar();
@@ -273,20 +295,29 @@ async function openNote(note: NoteMeta): Promise<void> {
     if (folder.id === note.folderId) option.selected = true;
     moveSelect.appendChild(option);
   }
-  moveSelect.addEventListener("change", () => void moveCurrentNote(note, moveSelect.value || null));
+  moveSelect.addEventListener("change", () => void moveCurrentNote(moveSelect.value || null));
 
   const deleteBtn = el("button.chip.act", { type: "button", text: "Delete", onClick: () => void removeNote(note) });
   const editorHost = el("div.notes-editor-host");
   appendChildren(mainEl, el("div.notes-main-head", {}, [backBtn, titleInput, moveSelect, deleteBtn]), editorHost);
 
-  const body = await loadNoteBody(ctx, note);
-  editor = createNoteEditor(editorHost, body, () => scheduleSave());
+  const { doc, markdown } = await loadNoteBody(ctx, note);
+  currentNoteDoc = doc;
+  editor = createNoteEditor(editorHost, markdown, () => scheduleSave());
 }
 
-async function moveCurrentNote(note: NoteMeta, folderId: string | null): Promise<void> {
-  const updated = await moveNote(ctx, note, folderId);
+/** Always acts on `currentNote`, never a `note` captured in the moveSelect listener's own
+ * closure at open time — that closure goes stale the moment the title or body changes during
+ * the session, and moveNote's `{ ...note, folderId }` spread would otherwise silently discard
+ * whatever was typed since, reverting the title/body sync had already saved right back to
+ * what they were when the note was first opened. flushPendingSave first for the same reason:
+ * an edit still sitting in the debounce timer needs to land before this reads currentNote. */
+async function moveCurrentNote(folderId: string | null): Promise<void> {
+  if (!currentNote) return;
+  await flushPendingSave();
+  const updated = await moveNote(ctx, currentNote, folderId);
   state.notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
-  if (currentNote?.id === updated.id) currentNote = updated;
+  currentNote = updated;
   paintSidebar();
 }
 
@@ -303,6 +334,7 @@ async function removeNote(note: NoteMeta): Promise<void> {
     // over the tombstone deleteNote() just wrote, resurrecting the note on the next reload —
     // exactly the bug this was. There is nothing left to save; only the view resets.
     currentNote = null;
+    currentNoteDoc = null;
     editor = null;
     shellEl?.setAttribute("data-view", "list");
     paintSidebar();
@@ -315,6 +347,7 @@ async function removeNote(note: NoteMeta): Promise<void> {
 async function closeNote(): Promise<void> {
   await flushPendingSave();
   currentNote = null;
+  currentNoteDoc = null;
   editor = null;
   shellEl?.setAttribute("data-view", "list");
   paintSidebar(); // the title (or content) may just have changed — the list should say so
@@ -331,10 +364,10 @@ async function flushPendingSave(): Promise<void> {
     clearTimeout(saveTimer);
     saveTimer = null;
   }
-  if (!currentNote || !editor || !titleInput) return;
+  if (!currentNote || !currentNoteDoc || !editor || !titleInput) return;
   const title = titleInput.value.trim();
   const body = editor.getMarkdown();
-  const updated = await saveNote(ctx, currentNote, title, body);
+  const updated = await saveNote(ctx, currentNote, currentNoteDoc, title, body);
   currentNote = updated;
   state.notes = state.notes.map((n) => (n.id === updated.id ? updated : n));
 }

@@ -84,6 +84,13 @@
       display: block; margin-top: 1rem; background: none; border: none; color: #9184d9;
       font-size: 0.85rem; padding: 0.25rem; text-decoration: underline;
     }
+    /* Same gotcha .overlay[hidden] below already works around: this rule's own `display:
+       block` beats the UA stylesheet's `[hidden] { display: none }` at equal specificity, so
+       setupBtn.hidden = true (auth.ts, once an account already exists) would do nothing
+       without this. */
+    .setup-link[hidden] {
+      display: none;
+    }
     /* The recovery phrase display/confirm and the "recover with a phrase" redemption form —
        both full-screen takeovers over the lock screen, built by auth.ts. Kept in this
        stylesheet rather than injected by JS so it survives the same build-time minification

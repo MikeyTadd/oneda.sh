@@ -161,6 +161,17 @@ Each tile is a self-contained module implementing:
 - `syncQueue.push(record)` — queue a local change for sync.
 - `storage.get/put(namespacedKey)` — IndexedDB wrapper, encryption handled transparently at this layer (tiles never touch raw crypto for storage).
 
+### 4.5 View layout — full width or split
+
+A tile declares how the shell frames its view, via `layout` on its manifest (`src/app/tiles/types.ts`):
+
+- **`"full"`** (the default) — one column the width of the content area.
+- **`"split"`** — the app's two-column layout: a main column plus a `--side-w` (380px) side track on a desktop, stacked under a hairline on a phone.
+
+**The default is `"full"` deliberately, and `"split"` makes `renderSide()` mandatory.** A split declares both columns, so a tile handed one it was not designed for ends up with a track of *dead space* rather than simply not having a track — deciding what goes in the side column is part of designing the screen, not an afterthought. The `Tile` type is a discriminated union on `layout`, so that rule is a compile error rather than a convention: declare `"split"` without a `renderSide()` and the build fails.
+
+The shell owns the frame and the tile only fills columns — a tile never builds its own `.split` or page padding. Both shapes put content in a `.main-col`, so the column padding and rhythm are declared once in `shell.css` and a tile can change layout without touching CSS. Settings is not a tile but uses the same primitive.
+
 ### 4.4 Post-auth shell — navigation, layout, style
 
 `src/app/shell/` (`nav.ts`, `nav-edit.ts`, `settings.ts`, `prefs.ts`, `shell.ts`, `shell.css`, `dom.ts`, `sheet.ts`, `alerts.ts`, `bell.ts`, `icons.ts`, `main.ts` — the `/app/main.js` entry point `public/shell/auth.js` dynamically imports on a successful passkey ceremony, section 13.1). Structure — one saved order painting both a desktop rail and a phone bottom bar, Settings pinned out of that order rather than sorted into it, one shared dialog every popup is built from, a generic alert queue feeding a bell and toasts — is adapted from a sibling project's PWA shell (F1 Apex); written fresh here against oneda's own tile model, not copied from that project.

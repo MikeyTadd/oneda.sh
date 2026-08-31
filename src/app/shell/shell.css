@@ -684,22 +684,17 @@ html {
     min-height: 0;
   }
 
-  .split > .main-col {
+  /* On `.main-col` itself rather than on `.split > .main-col`: every view
+   * has one now, whether it is a full-width tile or a split (section 4.5),
+   * so one rule pads both and there is no view left to fall through it.
+   * This is what replaced the `:has()` fallback that guessed at the frame
+   * a tile had not declared. */
+  .main-col {
     padding: 22px 24px 40px;
     min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 20px;
-  }
-
-  /* In F1 Apex every screen is a `.split`, so `#views: padding 0` above is
-   * safe there. Here a tile may render straight into its view without
-   * declaring one — the reference `notes` tile does — and would then sit
-   * flush against the rail. Such a view takes the same padding the
-   * main-col would have given it. (`:has()` is already a dependency: the
-   * dialog scroll lock uses it.) */
-  .view.active:not(:has(> .split)) {
-    padding: 22px 24px 40px;
   }
 
   .side {

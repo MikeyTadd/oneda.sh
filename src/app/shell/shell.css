@@ -76,7 +76,13 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* 15px on a phone, 13px on desktop (the media query below) — F1 Apex's
+   * pair. 14px here made every row a hair shorter and the whole sheet read
+   * tighter than the original at the same paddings. */
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
 }
 
@@ -433,15 +439,20 @@ button {
   color: var(--text);
 }
 
+/* F1 Apex writes this padding and gap as `var(--sp6)`, which is 16.8px on
+ * its scale and 24px on oneda's — the same token name, a different step.
+ * `--sp4` (16px) is the step here that lands where theirs does, so the
+ * sheet keeps its original rhythm rather than inheriting a looser one from
+ * a name collision. */
 .sheet-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--sp6) var(--gutter)
+  padding: var(--sp4) var(--gutter)
     calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--sp6);
+  gap: var(--sp4);
 }
 
 .sheet-block {
@@ -666,6 +677,7 @@ html {
     border-left: 0;
     border-right: 1px solid var(--hairline);
   }
+
 }
 
 /* ── toasts and the bell ──
@@ -1062,6 +1074,29 @@ button.row {
   margin: 0;
   font-size: 12px;
   color: var(--text-3);
+}
+
+/* A row on a desktop drops its side padding and its corners: there is no
+ * tap target to protect out here, and the hairline between rows does the
+ * separating that the rounded hover box does on a phone. Straight from
+ * F1 Apex — its absence was why oneda's rows sat 8px further in than the
+ * original at every desktop width.
+ *
+ * This media block sits here, directly after the base `.row`, rather than
+ * with the rest of the desktop rules further up: the two have the same
+ * specificity, so the later one wins, and up there the base rule would
+ * simply overwrite it. */
+@media (min-width: 900px) {
+  .row {
+    padding: 9px 0;
+    border-radius: 0;
+  }
+  .row + .row {
+    border-top: 1px solid var(--hairline);
+  }
+  .side .row {
+    padding: 9px 0;
+  }
 }
 
 /* ── the nav editor ──

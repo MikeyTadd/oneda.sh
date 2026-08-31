@@ -96,10 +96,10 @@ export async function mountShell(root: HTMLElement, deps: ShellDeps): Promise<vo
   wireMoreSheet(navEdit);
 
   await loadPrefs(deps.storage);
-  configureAlerts({ dwellMs: prefs.alertDwellMs });
+  configureAlerts({ dwellMs: prefs.alertDwellMs, toasts: prefs.alertToasts });
   window.addEventListener("prefs-changed", (event) => {
     const key = (event as CustomEvent<{ key?: string }>).detail?.key;
-    if (!key || key === "alertDwellMs") configureAlerts({ dwellMs: prefs.alertDwellMs });
+    if (!key || key === "alertDwellMs") configureAlerts({ dwellMs: prefs.alertDwellMs, toasts: prefs.alertToasts });
   });
   await connectAlerts(deps.storage);
   watchAlerts();
@@ -119,7 +119,7 @@ function connectionChip(where: "rail" | "appbar"): HTMLElement {
 }
 
 const CONNECTION_COPY: Record<SyncStatus, { cls: string; label: string }> = {
-  online: { cls: "live", label: "Synced" },
+  online: { cls: "live", label: "Connected" },
   connecting: { cls: "hold", label: "Connecting" },
   offline: { cls: "red", label: "Offline" },
 };
@@ -128,7 +128,7 @@ function paintConnection(status: SyncStatus): void {
   const { cls, label } = CONNECTION_COPY[status];
   forEachEl(document.querySelectorAll<HTMLElement>("#conn-rail, #conn-appbar"), (chip) => {
     chip.className = `live-pill ${cls}`;
-    chip.title = `Sync: ${label}`;
+    chip.title = `Connection: ${label}`;
     const text = chip.querySelector(".conn-label");
     if (text) text.textContent = label;
   });

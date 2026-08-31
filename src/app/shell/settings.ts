@@ -12,7 +12,7 @@
 // a dead switch.
 
 import { alert } from "./alerts.js";
-import { appendChildren, clear, el } from "./dom.js";
+import { appendChildren, clear, el, type ElChild } from "./dom.js";
 import { ICONS, iconSvg } from "./icons.js";
 import { openNavEditor, type NavEditDeps } from "./nav-edit.js";
 import { BAR_SLOTS } from "./nav.js";
@@ -22,6 +22,34 @@ import type { TileManifest } from "../tiles/types.js";
 export interface SettingsDeps extends NavEditDeps {
   appName: string;
 }
+
+/** A row with its say on the left and one control on the right — the shape every
+ * setting takes. `.toggle-row`/`.t-text`/`.t-title`/`.t-desc` are the system's,
+ * so a select, a chip and a switch all sit in the same frame. */
+const settingRow = (title: string, desc: string, control: ElChild): HTMLElement =>
+  el("div.toggle-row", {}, [
+    el("div.t-text", {}, [el("div.t-title", { text: title }), el("div.t-desc", { text: desc })]),
+    control,
+  ]);
+
+/** The system's switch: a button that carries its state in aria-pressed, which
+ * is what the stylesheet colours off. */
+const switchControl = (on: boolean, label: string, onChange: (next: boolean) => void): HTMLElement =>
+  el(
+    "button.switch",
+    {
+      type: "button",
+      "aria-pressed": String(on),
+      "aria-label": label,
+      onClick: (event: Event) => {
+        const button = event.currentTarget as HTMLElement;
+        const next = button.getAttribute("aria-pressed") !== "true";
+        button.setAttribute("aria-pressed", String(next));
+        onChange(next);
+      },
+    },
+    [el("i")]
+  );
 
 const blockHead = (text: string, trailing?: HTMLElement | null): HTMLElement =>
   el("div.section-head", {}, [el("span.eyebrow", { text }), trailing ?? null]);
@@ -77,24 +105,13 @@ function navigationBlock(deps: SettingsDeps): HTMLElement {
     el("p.block-note", {
       text: "One order for every device. A desktop rail shows all of it; a phone shows the first few and folds the rest behind More.",
     }),
-    el("div.rows", {}, [
-      el(
-        "button.row",
-        { type: "button", onClick: () => openNavEditor(deps) },
-        [
-          icon("more"),
-          el("div.who", {}, [
-            el("div.name", { text: "Customise navigation" }),
-            el("div.sub", {
-              text: orderNow.length
-                ? `${orderNow.length} tile${orderNow.length === 1 ? "" : "s"}, ${onBar} on the phone bar`
-                : "No tiles installed yet",
-            }),
-          ]),
-          el("span.chev", { text: "›" }),
-        ]
-      ),
-    ]),
+    settingRow(
+      "Customise navigation",
+      orderNow.length
+        ? `${orderNow.length} tile${orderNow.length === 1 ? "" : "s"}, ${onBar} on the phone bar`
+        : "No tiles installed yet",
+      el("button.chip.act", { type: "button", text: "Customise", onClick: () => openNavEditor(deps) })
+    ),
   ]);
 }
 
@@ -164,28 +181,30 @@ function alertsBlock(): HTMLElement {
       el("p.block-note", {
         text: "Shown while the app is open, and kept in the bell afterwards. Separate from push notifications, which reach a closed app and need a permission.",
       }),
-      el("div.toggle-row", {}, [
-        el("div.t-text", {}, [
-          el("div.t-title", { text: "Keep an alert on screen for" }),
-          el("div.t-desc", { text: "Hovering or focusing one pauses the countdown while you read it." }),
-        ]),
-        select,
-      ]),
-      // A button, not a tappable row. A row is a way through to somewhere and
-      // says so with a chevron; this fires an action and stays put, and giving
-      // it a whole row's hit area made the entire width light up edge to edge
-      // for something the size of a word.
-      el("p.block-note", { text: "Raises a real one, so the bell picks it up as well." }),
-      el("button.btn.ghost.wide", {
-        type: "button",
-        text: "Send a test alert",
-        onClick: () =>
-          alert({
-            source: "settings-test",
-            title: "Test alert",
-            detail: "This is what an in-app alert looks like. It is now in the bell too.",
-          }),
-      })
+      settingRow(
+        "Show alerts on screen",
+        "Off, they still collect in the bell — you just aren't interrupted.",
+        switchControl(prefs.alertToasts, "Show alerts on screen", (next) => setPref("alertToasts", next))
+      ),
+      settingRow(
+        "Keep an alert on screen for",
+        "Hovering or focusing one pauses the countdown while you read it.",
+        select
+      ),
+      settingRow(
+        "Test alert",
+        "Raises a real one, so the bell picks it up as well.",
+        el("button.chip.act", {
+          type: "button",
+          text: "Send a test",
+          onClick: () =>
+            alert({
+              source: "settings-test",
+              title: "Test alert",
+              detail: "This is what an in-app alert looks like. It is now in the bell too.",
+            }),
+        })
+      )
     );
   };
 

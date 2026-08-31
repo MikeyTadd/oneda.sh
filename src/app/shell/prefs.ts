@@ -13,10 +13,15 @@ export interface Prefs {
   /** How long an in-app toast stays before withdrawing itself, in ms.
    * 0 means "until dismissed". Read by alerts.ts via configureAlerts(). */
   alertDwellMs: number;
+  /** Whether an alert also interrupts with a toast. Off, it still reaches the
+   * bell — the record is never the thing being switched off, only the tap on
+   * the shoulder. */
+  alertToasts: boolean;
 }
 
 export const DEFAULT_PREFS: Prefs = {
   alertDwellMs: 10_000,
+  alertToasts: true,
 };
 
 const PREFS_KEY = "shell:prefs";

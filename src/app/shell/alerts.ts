@@ -53,8 +53,10 @@ export interface RaiseAlert {
  * dismissed". Settings can override this later; a sane default works
  * before that exists and for any caller that never sets one. */
 let dwellMs = 10_000;
+let toastsOn = true;
 
-export function configureAlerts(opts: { dwellMs?: number }): void {
+export function configureAlerts(opts: { dwellMs?: number; toasts?: boolean }): void {
+  if (typeof opts.toasts === "boolean") toastsOn = opts.toasts;
   if (typeof opts.dwellMs === "number" && Number.isFinite(opts.dwellMs) && opts.dwellMs >= 0) {
     dwellMs = opts.dwellMs;
   }
@@ -123,7 +125,9 @@ export function alert(raise: RaiseAlert): AlertEntry | null {
   persist();
   window.dispatchEvent(new CustomEvent("alerts-changed"));
 
-  showToast(entry);
+  // The history write above is unconditional: switching toasts off silences the
+  // interruption, never the record.
+  if (toastsOn) showToast(entry);
   return entry;
 }
 

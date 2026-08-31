@@ -95,7 +95,14 @@ export function order(saved: string[] | undefined, tiles: TileManifest[]): strin
     out.push(id);
   }
   for (const id of def) {
-    if (!seen.has(id)) out.push(id);
+    if (seen.has(id)) continue;
+    // A tile installed after the account's nav order was already saved joins at the end —
+    // except "home", the app's front door, which belongs first regardless of when it was
+    // added, the same way it's first for a fresh account (registry.ts's TILE_LOADERS
+    // insertion order decides defaultOrder() there). Without this, an account whose order
+    // was saved before Home existed would get it appended at the end instead.
+    if (id === "home") out.unshift(id);
+    else out.push(id);
   }
   return out;
 }

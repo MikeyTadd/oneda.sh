@@ -9,6 +9,9 @@ import type { Tile, TileContext } from "./types.js";
  * an uninstalled tile's code never loads (build order, section 11, step 4). Add one line
  * here per new tile module — nothing else in the shell needs to change. */
 const TILE_LOADERS: Record<string, () => Promise<{ default: Tile }>> = {
+  // First key = first tile for a fresh account (order below reads this object's own
+  // insertion order) — Home is meant to be the front door, so it goes first here too.
+  home: () => import("./home/index.js"),
   notes: () => import("./notes/index.js"),
 };
 

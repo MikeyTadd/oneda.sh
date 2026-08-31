@@ -4507,7 +4507,11 @@ body.theme-team {
   #view-driver .main-col,
   #view-constructor .main-col,
   #view-circuit .main-col,
-  #view-news .main-col {
+  #view-news .main-col,
+  /* Home (tiles/home/index.ts) — a normal registry-mounted tile, so it has no #view-home
+     id the way Settings has #view-settings (that id only exists for hand-built views); same
+     case as Notes' own .notes-main a few hundred lines down, addressed by class instead. */
+  .home-main {
     padding-top: var(--sp8);
   }
 

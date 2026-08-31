@@ -219,10 +219,15 @@ button {
 
 /* ── view host ── */
 
+/* The top padding is load-bearing now that no page prints its own title:
+ * nothing else owns the clearance from the sticky bar, so without it the
+ * first row of every screen sits against the bar's hairline, which reads
+ * as a collision rather than a layout. */
 #views {
   flex: 1;
   min-width: 0;
-  padding: 0 var(--gutter) calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
+  padding: var(--sp4) var(--gutter)
+    calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 24px);
 }
 
 .view {
@@ -305,30 +310,39 @@ button {
  * The dialog every popup in the shell is built from (./sheet.ts's
  * openSheet()) — a bottom sheet on a phone, a centred card on desktop, a
  * native <dialog> in both. Escape, the focus trap and the backdrop are the
- * platform's job. `.more-sheet` (nav overflow) is the first caller; a
- * future alert history / order editor / any tile's own popup use the same
- * base classes rather than inventing another dialog treatment. */
+ * platform's job.
+ *
+ * These rules are F1 Apex's sheet stylesheet carried over as-is: same
+ * properties, same literal values (92dvh, the 36px grab, the 44px close,
+ * the 18px title, 9px foot gap), same token *names*. Only the palette is
+ * remapped to oneda's — that project's neutral ramp (--n500/--n800/--n900)
+ * has no counterpart here, so its roles map onto --text-3 / --inactive /
+ * --hairline. Note the spacing tokens are the same names over a different
+ * scale: oneda's --sp6 is 24px where F1 Apex's is 16.8px, so the rhythm is
+ * a touch more open. */
 .sheet {
-  border: 0;
   padding: 0;
-  margin: auto auto 0;
+  border: 0;
   width: 100%;
   max-width: 100%;
-  max-height: 88dvh;
+  max-height: 92dvh;
+  margin: auto auto 0;
   background: transparent;
   color: var(--text);
   overflow: visible;
 }
-/* showModal() focuses the <dialog> element itself — the full-bleed
- * transparent box, not the visible card inside it — so the global focus
- * ring must not draw around it. Everything focusable within keeps its own
- * ring via :focus-visible below. */
+/* showModal() puts focus on the dialog element, and the dialog element is
+ * the full-bleed transparent box — not the card you can see. The global
+ * accent focus ring would therefore draw around the whole viewport,
+ * visibly out of register with the sheet inside it. The dialog is a
+ * container, not a control; everything focusable within keeps its own. */
 .sheet:focus,
 .sheet:focus-visible {
   outline: none;
 }
+
 .sheet::backdrop {
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(4, 7, 6, 0.66);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
@@ -336,20 +350,20 @@ button {
 .sheet-inner {
   display: flex;
   flex-direction: column;
-  max-height: 88dvh;
-  background: var(--surface);
+  max-height: 92dvh;
+  background: var(--bg);
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   box-shadow:
     0 0 0 1px var(--inactive),
-    0 -12px 40px rgba(0, 0, 0, 0.5);
+    0 -12px 40px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
 
-/* The head does not scroll — it's the answer to "what sheet is this",
- * and has to hold while the content under it moves. */
+/* The head does not scroll: it is the answer to "what am I looking at",
+ * and it has to hold while the rows under it move. */
 .sheet-head {
   flex: none;
-  padding: 10px var(--gutter) var(--sp3);
+  padding: 10px var(--gutter) 13px;
   border-bottom: 1px solid var(--hairline);
 }
 .sheet-head .grab {
@@ -363,9 +377,11 @@ button {
 .sheet-who {
   display: flex;
   align-items: center;
-  gap: var(--sp3);
+  gap: 12px;
   min-width: 0;
 }
+/* The negative margin absorbs the target's own slack so a bigger hit area
+ * does not make the head taller or eat into the title's line. */
 .sheet-who > .sheet-x {
   margin: -11px -11px 0 2px;
   align-self: flex-start;
@@ -377,11 +393,11 @@ button {
 .sheet-name .line {
   display: flex;
   align-items: center;
-  gap: var(--sp2);
+  gap: 8px;
   min-width: 0;
 }
 .sheet-name .t {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -393,8 +409,10 @@ button {
   color: var(--text-3);
   margin-top: 1px;
 }
-/* Close is a 44px target (never smaller — the one control you reach for
- * when you want out) with a 17px glyph centred in it. */
+/* 44px and a 17px glyph. At 13px the ✕ reads as a decoration in the corner
+ * of a sheet rather than the way out of it, and anything under 44px is
+ * below the minimum for a tap target — the one control on the screen you
+ * reach for when you want out must not be the smallest thing on it. */
 .sheet-x {
   flex: none;
   display: inline-flex;
@@ -411,7 +429,7 @@ button {
   cursor: pointer;
 }
 .sheet-x:hover {
-  background: var(--inactive);
+  background: var(--hairline);
   color: var(--text);
 }
 
@@ -419,21 +437,30 @@ button {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: var(--sp6) var(--gutter) calc(var(--sp4) + env(safe-area-inset-bottom));
+  padding: var(--sp6) var(--gutter)
+    calc(var(--gutter) + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
-  gap: var(--sp4);
+  gap: var(--sp6);
 }
 
-/* The foot every sheet with actions shares (./sheet.ts's sheetFoot()):
- * buttons in a row, right-aligned, above the safe area. */
+.sheet-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp3);
+}
+.sheet-block > .eyebrow {
+  color: var(--text-3);
+}
+
 .sheet-foot {
   flex: none;
   display: flex;
   justify-content: flex-end;
-  gap: var(--sp3);
-  padding: var(--sp3) var(--gutter) calc(var(--sp3) + env(safe-area-inset-bottom));
+  gap: 9px;
+  padding: 11px var(--gutter) calc(11px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--hairline);
+  background: var(--bg);
 }
 
 /* A dialog does not stop the page behind it scrolling on its own — locking
@@ -457,7 +484,7 @@ html {
     border-radius: var(--radius-lg);
   }
   .sheet-head {
-    padding-top: var(--sp4);
+    padding-top: 14px;
   }
   .sheet-head .grab {
     display: none;
@@ -616,11 +643,28 @@ html {
     align-items: start;
   }
   .side {
+    gap: 22px;
     margin-top: 0;
-    padding-top: 0;
-    padding-left: var(--sp6);
+    padding: 0 0 0 var(--sp6);
     border-top: 0;
     border-left: 1px solid var(--hairline);
+    min-width: 0;
+  }
+
+  /* Settings' own variation on the shared split: the quiet About track
+   * sits on the LEFT. Done with `order` rather than DOM order so the
+   * phone still stacks main-then-side — About above the controls would
+   * put a paragraph of prose between the reader and what they came to
+   * change. The hairline swaps sides with it, or it would divide the two
+   * columns from the wrong edge. */
+  .split.side-first {
+    grid-template-columns: var(--side-w) minmax(0, 1fr);
+  }
+  .split.side-first > .side {
+    order: -1;
+    padding: 0 var(--sp6) 0 0;
+    border-left: 0;
+    border-right: 1px solid var(--hairline);
   }
 }
 
@@ -1160,19 +1204,10 @@ button.row {
 
 /* ── settings ── */
 
-/* A settings screen is a column of prose and rows, so it takes a
- * readable measure rather than the whole desktop width — a 1400px row
- * with a name at one end and a chip at the other is unreadable. */
-#view-settings {
-  max-width: 760px;
-}
-
-.screen-title {
-  font-size: 27px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  margin: var(--sp4) 0 0;
-}
+/* No `.screen-title` on purpose. Both bars already carry the name of the
+ * screen you are on (shell.ts's navigate()), so a page that prints its own
+ * heading under that reads as two different things stacked. A view that
+ * needs a heading is naming a *section*, not the screen. */
 
 .eyebrow {
   font-size: 10px;
@@ -1189,9 +1224,11 @@ button.row {
   margin: 0 0 var(--sp3);
 }
 
+/* A block is a flex child of `.main-col`, which already spaces them —
+ * adding a top margin here would spend the token twice and read as a
+ * section break rather than the rhythm. */
 .set-block {
   display: block;
-  margin-top: var(--sp8);
 }
 
 /* One line of context under a section head, before its rows start. Sits

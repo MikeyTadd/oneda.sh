@@ -38,15 +38,28 @@ function icon(name: string): HTMLElement {
 export function renderSettings(container: HTMLElement, deps: SettingsDeps): void {
   const paint = () => {
     clear(container);
-    appendChildren(
-      container,
-      el("h1.screen-title", { text: "Settings" }),
+    // No heading of its own: the sticky bar above already names the screen
+    // (shell.ts's navigate()), and a page that prints its title twice reads
+    // as two different things stacked. Same rule for every tile.
+    //
+    // Two columns on desktop, the app's usual `.split`. The settings that
+    // *do* something go in the main column; About — which is read once and
+    // never operated — goes in the quiet side track. `.side-first` puts
+    // that track on the LEFT here, which is this screen's own variation on
+    // the shared `.split` (every other screen keeps the side on the right).
+    //
+    // The DOM order is main-then-side regardless, and the desktop swap is
+    // done with CSS `order`: on a phone `.split` stacks in DOM order, and
+    // About arriving *above* the controls would put a paragraph of prose
+    // between the reader and the thing they opened Settings to change.
+    const mainCol = el("div.main-col", {}, [
       navigationBlock(deps),
       tilesBlock(deps.manifests),
       alertsBlock(),
       accountBlock(),
-      aboutBlock(deps.appName)
-    );
+    ]);
+    const side = el("aside.side", {}, [aboutBlock(deps.appName)]);
+    appendChildren(container, el("div.split.side-first", {}, [mainCol, side]));
   };
   paint();
   window.addEventListener("nav-changed", paint);

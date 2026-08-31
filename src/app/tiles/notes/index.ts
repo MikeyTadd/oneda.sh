@@ -35,10 +35,9 @@ const notesTile: Tile = {
   },
 
   render(container: HTMLElement) {
-    const heading = document.createElement("h2");
-    heading.textContent = "Notes";
-    container.appendChild(heading);
-
+    // No heading: the shell's sticky bar already names the tile, and a
+    // screen that prints its own title under that one reads as two
+    // different things stacked (docs/DESIGN.md §4.4).
     const form = document.createElement("form");
     const input = document.createElement("input");
     input.placeholder = "New note";
